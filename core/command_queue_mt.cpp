@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,9 +27,10 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "command_queue_mt.h"
 
-#include "os/os.h"
+#include "core/os/os.h"
 
 void CommandQueueMT::lock() {
 
@@ -55,6 +56,7 @@ CommandQueueMT::SyncSemaphore *CommandQueueMT::_alloc_sync_sem() {
 
 	while (true) {
 
+		lock();
 		for (int i = 0; i < SYNC_SEMAPHORES; i++) {
 
 			if (!sync_sems[i].in_use) {
@@ -63,6 +65,7 @@ CommandQueueMT::SyncSemaphore *CommandQueueMT::_alloc_sync_sem() {
 				break;
 			}
 		}
+		unlock();
 
 		if (idx == -1) {
 			wait_for_flush();
@@ -74,11 +77,37 @@ CommandQueueMT::SyncSemaphore *CommandQueueMT::_alloc_sync_sem() {
 	return &sync_sems[idx];
 }
 
+bool CommandQueueMT::dealloc_one() {
+tryagain:
+	if (dealloc_ptr == write_ptr) {
+		// The queue is empty
+		return false;
+	}
+
+	uint32_t size = *(uint32_t *)&command_mem[dealloc_ptr];
+
+	if (size == 0) {
+		// End of command buffer wrap down
+		dealloc_ptr = 0;
+		goto tryagain;
+	}
+
+	if (size & 1) {
+		// Still used, nothing can be deallocated
+		return false;
+	}
+
+	dealloc_ptr += (size >> 1) + 8;
+	return true;
+}
+
 CommandQueueMT::CommandQueueMT(bool p_sync) {
 
 	read_ptr = 0;
 	write_ptr = 0;
+	dealloc_ptr = 0;
 	mutex = Mutex::create();
+	command_mem = (uint8_t *)memalloc(COMMAND_MEM_SIZE);
 
 	for (int i = 0; i < SYNC_SEMAPHORES; i++) {
 
@@ -100,4 +129,5 @@ CommandQueueMT::~CommandQueueMT() {
 
 		memdelete(sync_sems[i].sem);
 	}
+	memfree(command_mem);
 }

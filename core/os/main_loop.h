@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,15 +27,18 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef MAIN_LOOP_H
 #define MAIN_LOOP_H
 
-#include "os/input_event.h"
-#include "reference.h"
-#include "script_language.h"
+#include "core/os/input_event.h"
+#include "core/reference.h"
+#include "core/script_language.h"
+
 /**
 	@author Juan Linietsky <reduzio@gmail.com>
 */
+
 class MainLoop : public Object {
 
 	GDCLASS(MainLoop, Object);
@@ -48,15 +51,19 @@ protected:
 
 public:
 	enum {
-		NOTIFICATION_WM_MOUSE_ENTER = 2,
-		NOTIFICATION_WM_MOUSE_EXIT = 3,
-		NOTIFICATION_WM_FOCUS_IN = 4,
-		NOTIFICATION_WM_FOCUS_OUT = 5,
-		NOTIFICATION_WM_QUIT_REQUEST = 6,
-		NOTIFICATION_WM_GO_BACK_REQUEST = 7,
-		NOTIFICATION_WM_UNFOCUS_REQUEST = 8,
-		NOTIFICATION_OS_MEMORY_WARNING = 9,
-		NOTIFICATION_TRANSLATION_CHANGED = 10,
+		//make sure these are replicated in Node
+		NOTIFICATION_WM_MOUSE_ENTER = 1002,
+		NOTIFICATION_WM_MOUSE_EXIT = 1003,
+		NOTIFICATION_WM_FOCUS_IN = 1004,
+		NOTIFICATION_WM_FOCUS_OUT = 1005,
+		NOTIFICATION_WM_QUIT_REQUEST = 1006,
+		NOTIFICATION_WM_GO_BACK_REQUEST = 1007,
+		NOTIFICATION_WM_UNFOCUS_REQUEST = 1008,
+		NOTIFICATION_OS_MEMORY_WARNING = 1009,
+		NOTIFICATION_TRANSLATION_CHANGED = 1010,
+		NOTIFICATION_WM_ABOUT = 1011,
+		NOTIFICATION_CRASH = 1012,
+		NOTIFICATION_OS_IME_UPDATE = 1013,
 	};
 
 	virtual void input_event(const Ref<InputEvent> &p_event);

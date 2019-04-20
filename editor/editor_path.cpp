@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "editor_path.h"
 
 #include "editor_node.h"
@@ -53,12 +54,7 @@ void EditorPath::_add_children_to_popup(Object *p_obj, int p_depth) {
 		if (!obj)
 			continue;
 
-		Ref<Texture> icon;
-
-		if (has_icon(obj->get_class(), "EditorIcons"))
-			icon = get_icon(obj->get_class(), "EditorIcons");
-		else
-			icon = get_icon("Object", "EditorIcons");
+		Ref<Texture> icon = EditorNode::get_singleton()->get_object_icon(obj);
 
 		int index = popup->get_item_count();
 		popup->add_icon_item(icon, E->get().name.capitalize(), objects.size());
@@ -121,16 +117,12 @@ void EditorPath::_notification(int p_what) {
 
 				String type = obj->get_class();
 
-				Ref<Texture> icon;
+				Ref<Texture> icon = EditorNode::get_singleton()->get_object_icon(obj);
 
-				if (has_icon(obj->get_class(), "EditorIcons"))
-					icon = get_icon(obj->get_class(), "EditorIcons");
-				else
-					icon = get_icon("Object", "EditorIcons");
-
-				icon->draw(ci, Point2i(ofs, (size.height - icon->get_height()) / 2));
-
-				ofs += icon->get_width();
+				if (icon.is_valid()) {
+					icon->draw(ci, Point2i(ofs, (size.height - icon->get_height()) / 2));
+					ofs += icon->get_width();
+				}
 
 				if (i == history->get_path_size() - 1) {
 					//add name
@@ -139,9 +131,9 @@ void EditorPath::_notification(int p_what) {
 					if (left < 0)
 						continue;
 					String name;
-					if (obj->cast_to<Resource>()) {
+					if (Object::cast_to<Resource>(obj)) {
 
-						Resource *r = obj->cast_to<Resource>();
+						Resource *r = Object::cast_to<Resource>(obj);
 						if (r->get_path().is_resource_file())
 							name = r->get_path().get_file();
 						else
@@ -149,18 +141,18 @@ void EditorPath::_notification(int p_what) {
 
 						if (name == "")
 							name = r->get_class();
-					} else if (obj->cast_to<Node>()) {
-
-						name = obj->cast_to<Node>()->get_name();
-					} else if (obj->cast_to<Resource>() && obj->cast_to<Resource>()->get_name() != "") {
-						name = obj->cast_to<Resource>()->get_name();
-					} else {
+					} else if (obj->is_class("ScriptEditorDebuggerInspectedObject"))
+						name = obj->call("get_title");
+					else if (Object::cast_to<Node>(obj))
+						name = Object::cast_to<Node>(obj)->get_name();
+					else if (Object::cast_to<Resource>(obj) && Object::cast_to<Resource>(obj)->get_name() != "")
+						name = Object::cast_to<Resource>(obj)->get_name();
+					else
 						name = obj->get_class();
-					}
 
 					set_tooltip(obj->get_class());
 
-					label_font->draw(ci, Point2i(ofs, (size.height - label_font->get_height()) / 2 + label_font->get_ascent()), name, Color(1, 1, 1), left);
+					label_font->draw(ci, Point2i(ofs, (size.height - label_font->get_height()) / 2 + label_font->get_ascent()), name, get_color("font_color", "Label"), left);
 				} else {
 					//add arrow
 

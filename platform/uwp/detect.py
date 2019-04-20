@@ -1,6 +1,5 @@
 import methods
 import os
-import string
 import sys
 
 
@@ -17,7 +16,7 @@ def can_build():
         # building natively on windows!
         if (os.getenv("VSINSTALLDIR")):
 
-            if (os.getenv("ANGLE_SRC_PATH") == None):
+            if (os.getenv("ANGLE_SRC_PATH") is None):
                 return False
 
             return True
@@ -25,20 +24,22 @@ def can_build():
 
 
 def get_opts():
-
     return [
+        ('msvc_version', 'MSVC version to use (ignored if the VCINSTALLDIR environment variable is set)', None),
     ]
 
 
 def get_flags():
 
     return [
-        ('tools', 'no'),
-        ('xaudio2', 'yes'),
+        ('tools', False),
+        ('xaudio2', True),
     ]
 
 
 def configure(env):
+
+    env.msvc = True
 
     if (env["bits"] != "default"):
         print("Error: bits argument is disabled for MSVC")
@@ -84,7 +85,7 @@ def configure(env):
     ## Architecture
 
     arch = ""
-    if os.getenv('Platform') == "ARM":
+    if str(os.getenv('Platform')).lower() == "arm":
 
         print("Compiled program architecture will be an ARM executable. (forcing bits=32).")
 
@@ -107,7 +108,7 @@ def configure(env):
             env["bits"] = "32"
             print("Compiled program architecture will be a x86 executable. (forcing bits=32).")
         else:
-            print("Failed to detect MSVC compiler architecture version... Defaulting to 32bit executable settings (forcing bits=32). Compilation attempt will continue, but SCons can not detect for what architecture this build is compiled for. You should check your settings/compilation setup.")
+            print("Failed to detect MSVC compiler architecture version... Defaulting to 32-bit executable settings (forcing bits=32). Compilation attempt will continue, but SCons can not detect for what architecture this build is compiled for. You should check your settings/compilation setup.")
             env["bits"] = "32"
 
         if (env["bits"] == "32"):
@@ -136,7 +137,7 @@ def configure(env):
 
     env.Append(CPPPATH=['#platform/uwp', '#drivers/windows'])
     env.Append(CCFLAGS=['/DUWP_ENABLED', '/DWINDOWS_ENABLED', '/DTYPED_METHOD_BIND'])
-    env.Append(CCFLAGS=['/DGLES2_ENABLED', '/DGL_GLEXT_PROTOTYPES', '/DEGL_EGLEXT_PROTOTYPES', '/DANGLE_ENABLED'])
+    env.Append(CCFLAGS=['/DGLES_ENABLED', '/DGL_GLEXT_PROTOTYPES', '/DEGL_EGLEXT_PROTOTYPES', '/DANGLE_ENABLED'])
     winver = "0x0602" # Windows 8 is the minimum target for UWP build
     env.Append(CCFLAGS=['/DWINVER=%s' % winver, '/D_WIN32_WINNT=%s' % winver])
 
@@ -145,8 +146,8 @@ def configure(env):
     env.Append(CPPFLAGS=['/AI', vc_base_path + 'lib/store/references'])
     env.Append(CPPFLAGS=['/AI', vc_base_path + 'lib/x86/store/references'])
 
-    env.Append(CCFLAGS=string.split('/FS /MP /GS /wd"4453" /wd"28204" /wd"4291" /Zc:wchar_t /Gm- /fp:precise /D "_UNICODE" /D "UNICODE" /D "WINAPI_FAMILY=WINAPI_FAMILY_APP" /errorReport:prompt /WX- /Zc:forScope /Gd /EHsc /nologo'))
-    env.Append(CXXFLAGS=string.split('/ZW /FS'))
+    env.Append(CCFLAGS='/FS /MP /GS /wd"4453" /wd"28204" /wd"4291" /Zc:wchar_t /Gm- /fp:precise /D "_UNICODE" /D "UNICODE" /D "WINAPI_FAMILY=WINAPI_FAMILY_APP" /errorReport:prompt /WX- /Zc:forScope /Gd /EHsc /nologo'.split())
+    env.Append(CXXFLAGS='/ZW /FS'.split())
     env.Append(CCFLAGS=['/AI', vc_base_path + '\\vcpackages', '/AI', os.environ['WINDOWSSDKDIR'] + '\\References\\CommonConfiguration\\Neutral'])
 
     ## Link flags
@@ -160,6 +161,7 @@ def configure(env):
         'libANGLE',
         'libEGL',
         'libGLESv2',
+        'bcrypt',
     ]
     env.Append(LINKFLAGS=[p + ".lib" for p in LIBS])
 

@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef LIGHT_2D_H
 #define LIGHT_2D_H
 
@@ -48,6 +49,7 @@ public:
 		SHADOW_FILTER_NONE,
 		SHADOW_FILTER_PCF3,
 		SHADOW_FILTER_PCF5,
+		SHADOW_FILTER_PCF7,
 		SHADOW_FILTER_PCF9,
 		SHADOW_FILTER_PCF13,
 	};
@@ -83,9 +85,16 @@ protected:
 	static void _bind_methods();
 
 public:
-	virtual void edit_set_pivot(const Point2 &p_pivot);
-	virtual Point2 edit_get_pivot() const;
-	virtual bool edit_has_pivot() const;
+	virtual Dictionary _edit_get_state() const;
+	virtual void _edit_set_state(const Dictionary &p_state);
+
+	virtual void _edit_set_pivot(const Point2 &p_pivot);
+	virtual Point2 _edit_get_pivot() const;
+	virtual bool _edit_use_pivot() const;
+	virtual Rect2 _edit_get_rect() const;
+	virtual bool _edit_use_rect() const;
+
+	virtual Rect2 get_anchorable_rect() const;
 
 	void set_enabled(bool p_enabled);
 	bool is_enabled() const;
@@ -149,8 +158,6 @@ public:
 
 	void set_shadow_smooth(float p_amount);
 	float get_shadow_smooth() const;
-
-	virtual Rect2 get_item_rect() const;
 
 	String get_configuration_warning() const;
 

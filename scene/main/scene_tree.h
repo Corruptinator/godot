@@ -1,12 +1,12 @@
 /*************************************************************************/
-/*  scene_main_loop.h                                                    */
+/*  scene_tree.h                                                         */
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,22 +27,22 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef SCENE_MAIN_LOOP_H
 #define SCENE_MAIN_LOOP_H
 
-#include "io/networked_multiplayer_peer.h"
-#include "os/main_loop.h"
-#include "os/thread_safe.h"
+#include "core/io/multiplayer_api.h"
+#include "core/os/main_loop.h"
+#include "core/os/thread_safe.h"
+#include "core/self_list.h"
 #include "scene/resources/mesh.h"
 #include "scene/resources/world.h"
 #include "scene/resources/world_2d.h"
-#include "self_list.h"
 
 /**
 	@author Juan Linietsky <reduzio@gmail.com>
 */
 
-class SceneTree;
 class PackedScene;
 class Node;
 class Viewport;
@@ -105,15 +105,11 @@ private:
 	Viewport *root;
 
 	uint64_t tree_version;
-	float fixed_process_time;
+	float physics_process_time;
 	float idle_process_time;
 	bool accept_quit;
 	bool quit_on_go_back;
-	uint32_t last_id;
 
-#ifdef TOOLS_ENABLED
-	bool editor_hint;
-#endif
 #ifdef DEBUG_ENABLED
 	bool debug_collisions_hint;
 	bool debug_navigation_hint;
@@ -125,11 +121,15 @@ private:
 	bool _quit;
 	bool initialized;
 	bool input_handled;
+
 	Size2 last_screen_size;
 	StringName tree_changed_name;
+	StringName node_added_name;
 	StringName node_removed_name;
 
+	bool use_font_oversampling;
 	int64_t current_frame;
+	int64_t current_event;
 	int node_count;
 
 #ifdef TOOLS_ENABLED
@@ -150,8 +150,9 @@ private:
 	StretchMode stretch_mode;
 	StretchAspect stretch_aspect;
 	Size2i stretch_min;
-	int stretch_shrink;
+	real_t stretch_shrink;
 
+	void _update_font_oversampling(float p_ratio);
 	void _update_root_rect();
 
 	List<ObjectID> delete_queue;
@@ -159,9 +160,8 @@ private:
 	Map<UGCall, Vector<Variant> > unique_group_calls;
 	bool ugc_locked;
 	void _flush_ugc();
-	void _flush_transform_notifications();
 
-	_FORCE_INLINE_ void _update_group_order(Group &g);
+	_FORCE_INLINE_ void _update_group_order(Group &g, bool p_use_priority = false);
 	void _update_listener();
 
 	Array _get_nodes_in_group(const StringName &p_group);
@@ -185,16 +185,9 @@ private:
 
 	///network///
 
-	enum NetworkCommands {
-		NETWORK_COMMAND_REMOTE_CALL,
-		NETWORK_COMMAND_REMOTE_SET,
-		NETWORK_COMMAND_SIMPLIFY_PATH,
-		NETWORK_COMMAND_CONFIRM_PATH,
-	};
+	Ref<MultiplayerAPI> multiplayer;
+	bool multiplayer_poll;
 
-	Ref<NetworkedMultiplayerPeer> network_peer;
-
-	Set<int> connected_peers;
 	void _network_peer_connected(int p_id);
 	void _network_peer_disconnected(int p_id);
 
@@ -202,42 +195,16 @@ private:
 	void _connection_failed();
 	void _server_disconnected();
 
-	//path sent caches
-	struct PathSentCache {
-		Map<int, bool> confirmed_peers;
-		int id;
-	};
-
-	HashMap<NodePath, PathSentCache> path_send_cache;
-	int last_send_cache_id;
-
-	//path get caches
-	struct PathGetCache {
-		struct NodeInfo {
-			NodePath path;
-			ObjectID instance;
-		};
-
-		Map<int, NodeInfo> nodes;
-	};
-
-	Map<int, PathGetCache> path_get_cache;
-
-	Vector<uint8_t> packet_cache;
-
-	void _network_process_packet(int p_from, const uint8_t *p_packet, int p_packet_len);
-	void _network_poll();
-
 	static SceneTree *singleton;
 	friend class Node;
 
-	void _rpc(Node *p_from, int p_to, bool p_unreliable, bool p_set, const StringName &p_name, const Variant **p_arg, int p_argcount);
-
 	void tree_changed();
+	void node_added(Node *p_node);
 	void node_removed(Node *p_node);
 
 	Group *add_to_group(const StringName &p_group, Node *p_node);
 	void remove_from_group(const StringName &p_group, Node *p_node);
+	void make_group_changed(const StringName &p_group);
 
 	void _notify_group_pause(const StringName &p_group, int p_notification);
 	void _call_input_pause(const StringName &p_group, const StringName &p_method, const Ref<InputEvent> &p_input);
@@ -320,10 +287,10 @@ protected:
 
 public:
 	enum {
-		NOTIFICATION_TRANSFORM_CHANGED = 29
+		NOTIFICATION_TRANSFORM_CHANGED = 2000
 	};
 
-	enum CallGroupFlags {
+	enum GroupCallFlags {
 		GROUP_CALL_DEFAULT = 0,
 		GROUP_CALL_REVERSE = 1,
 		GROUP_CALL_REALTIME = 2,
@@ -333,8 +300,6 @@ public:
 
 	_FORCE_INLINE_ Viewport *get_root() const { return root; }
 
-	uint32_t get_last_event_id() const;
-
 	void call_group_flags(uint32_t p_call_flags, const StringName &p_group, const StringName &p_function, VARIANT_ARG_LIST);
 	void notify_group_flags(uint32_t p_call_flags, const StringName &p_group, int p_notification);
 	void set_group_flags(uint32_t p_call_flags, const StringName &p_group, const String &p_name, const Variant &p_value);
@@ -342,6 +307,8 @@ public:
 	void call_group(const StringName &p_group, const StringName &p_function, VARIANT_ARG_LIST);
 	void notify_group(const StringName &p_group, int p_notification);
 	void set_group(const StringName &p_group, const String &p_name, const Variant &p_value);
+
+	void flush_transform_notifications();
 
 	virtual void input_text(const String &p_text);
 	virtual void input_event(const Ref<InputEvent> &p_event);
@@ -359,18 +326,12 @@ public:
 
 	void set_input_as_handled();
 	bool is_input_handled();
-	_FORCE_INLINE_ float get_fixed_process_time() const { return fixed_process_time; }
+	_FORCE_INLINE_ float get_physics_process_time() const { return physics_process_time; }
 	_FORCE_INLINE_ float get_idle_process_time() const { return idle_process_time; }
 
 #ifdef TOOLS_ENABLED
-	void set_editor_hint(bool p_enabled);
-
-	bool is_editor_hint() const;
 	bool is_node_being_edited(const Node *p_node) const;
 #else
-	void set_editor_hint(bool p_enabled) {}
-
-	bool is_editor_hint() const { return false; }
 	bool is_node_being_edited(const Node *p_node) const { return false; }
 #endif
 
@@ -414,6 +375,7 @@ public:
 	int get_collision_debug_contact_count() { return collision_debug_contacts; }
 
 	int64_t get_frame() const;
+	int64_t get_event_count() const;
 
 	int get_node_count() const;
 
@@ -422,15 +384,16 @@ public:
 	void get_nodes_in_group(const StringName &p_group, List<Node *> *p_list);
 	bool has_group(const StringName &p_identifier) const;
 
-	void set_screen_stretch(StretchMode p_mode, StretchAspect p_aspect, const Size2 p_minsize, int p_shrink = 1);
+	void set_screen_stretch(StretchMode p_mode, StretchAspect p_aspect, const Size2 p_minsize, real_t p_shrink = 1);
 
-//void change_scene(const String& p_path);
-//Node *get_loaded_scene();
+	void set_use_font_oversampling(bool p_oversampling);
+	bool is_using_font_oversampling() const;
 
-#ifdef TOOLS_ENABLED
+	//void change_scene(const String& p_path);
+	//Node *get_loaded_scene();
+
 	void set_edited_scene_root(Node *p_node);
 	Node *get_edited_scene_root() const;
-#endif
 
 	void set_current_scene(Node *p_scene);
 	Node *get_current_scene() const;
@@ -449,11 +412,17 @@ public:
 
 	//network API
 
+	Ref<MultiplayerAPI> get_multiplayer() const;
+	void set_multiplayer_poll_enabled(bool p_enabled);
+	bool is_multiplayer_poll_enabled() const;
+	void set_multiplayer(Ref<MultiplayerAPI> p_multiplayer);
 	void set_network_peer(const Ref<NetworkedMultiplayerPeer> &p_network_peer);
+	Ref<NetworkedMultiplayerPeer> get_network_peer() const;
 	bool is_network_server() const;
 	bool has_network_peer() const;
 	int get_network_unique_id() const;
 	Vector<int> get_network_connected_peers() const;
+	int get_rpc_sender_id() const;
 
 	void set_refuse_new_network_connections(bool p_refuse);
 	bool is_refusing_new_network_connections() const;
@@ -465,5 +434,6 @@ public:
 
 VARIANT_ENUM_CAST(SceneTree::StretchMode);
 VARIANT_ENUM_CAST(SceneTree::StretchAspect);
+VARIANT_ENUM_CAST(SceneTree::GroupCallFlags);
 
 #endif

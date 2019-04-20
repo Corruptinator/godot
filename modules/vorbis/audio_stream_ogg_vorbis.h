@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,12 +27,13 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef AUDIO_STREAM_OGG_VORBIS_H
 #define AUDIO_STREAM_OGG_VORBIS_H
 
-#include "io/resource_loader.h"
-#include "os/file_access.h"
-#include "os/thread_safe.h"
+#include "core/io/resource_loader.h"
+#include "core/os/file_access.h"
+#include "core/os/thread_safe.h"
 #include "scene/resources/audio_stream.h"
 
 #include <vorbis/vorbisfile.h>
@@ -85,7 +86,7 @@ public:
 	virtual void set_loop_restart_time(float p_time) { loop_restart_time = p_time; }
 
 	virtual void set_paused(bool p_paused);
-	virtual bool is_paused(bool p_paused) const;
+	virtual bool is_paused() const;
 
 	virtual void set_loop(bool p_enable);
 	virtual bool has_loop() const;
@@ -96,14 +97,14 @@ public:
 
 	virtual int get_loop_count() const;
 
-	virtual float get_pos() const;
-	virtual void seek_pos(float p_time);
+	virtual float get_playback_position() const;
+	virtual void seek(float p_time);
 
 	virtual int get_channels() const { return stream_channels; }
 	virtual int get_mix_rate() const { return stream_srate; }
 
 	virtual int get_minimum_buffer_size() const { return 0; }
-	virtual int mix(int16_t *p_bufer, int p_frames);
+	virtual int mix(int16_t *p_buffer, int p_frames);
 
 	AudioStreamPlaybackOGGVorbis();
 	~AudioStreamPlaybackOGGVorbis();
@@ -126,6 +127,7 @@ public:
 };
 
 class ResourceFormatLoaderAudioStreamOGGVorbis : public ResourceFormatLoader {
+	GDCLASS(ResourceFormatLoaderAudioStreamOGGVorbis, ResourceFormatLoader)
 public:
 	virtual RES load(const String &p_path, const String &p_original_path = "", Error *r_error = NULL);
 	virtual void get_recognized_extensions(List<String> *p_extensions) const;

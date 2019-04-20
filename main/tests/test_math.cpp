@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,24 +27,25 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "test_math.h"
 
-#include "camera_matrix.h"
-#include "math_funcs.h"
-#include "matrix3.h"
-#include "os/file_access.h"
-#include "os/keyboard.h"
-#include "os/os.h"
-#include "print_string.h"
+#include "core/math/basis.h"
+#include "core/math/camera_matrix.h"
+#include "core/math/math_funcs.h"
+#include "core/math/transform.h"
+#include "core/os/file_access.h"
+#include "core/os/keyboard.h"
+#include "core/os/os.h"
+#include "core/print_string.h"
+#include "core/ustring.h"
+#include "core/variant.h"
+#include "core/vmap.h"
 #include "scene/main/node.h"
 #include "scene/resources/texture.h"
 #include "servers/visual/shader_language.h"
-#include "transform.h"
-#include "ustring.h"
-#include "variant.h"
-#include "vmap.h"
 
-#include "method_ptrcall.h"
+#include "core/method_ptrcall.h"
 
 namespace TestMath {
 
@@ -205,54 +206,12 @@ class GetClassAndNamespace {
 								case 'r':
 									res = 13;
 									break;
-								/* too much, not needed for now
-								case 'u': {
-									//hexnumbarh - oct is deprecated
-
-
-									for(int j=0;j<4;j++) {
-										CharType c = code[idx+j+1];
-										if (c==0) {
-											r_err_str="Unterminated String";
-											return ERR_PARSE_ERROR;
-										}
-										if (!((c>='0' && c<='9') || (c>='a' && c<='f') || (c>='A' && c<='F'))) {
-
-											r_err_str="Malformed hex constant in string";
-											return ERR_PARSE_ERROR;
-										}
-										CharType v;
-										if (c>='0' && c<='9') {
-											v=c-'0';
-										} else if (c>='a' && c<='f') {
-											v=c-'a';
-											v+=10;
-										} else if (c>='A' && c<='F') {
-											v=c-'A';
-											v+=10;
-										} else {
-											ERR_PRINT("BUG");
-											v=0;
-										}
-
-										res<<=4;
-										res|=v;
-
-
-									}
-									idx+=4; //will add at the end anyway
-
-
-								} break;*/
 								case '\"': res = '\"'; break;
 								case '\\':
 									res = '\\';
 									break;
-								//case '/': res='/'; break;
 								default: {
 									res = next;
-									//r_err_str="Invalid escape sequence";
-									//return ERR_PARSE_ERROR;
 								} break;
 							}
 
@@ -413,23 +372,6 @@ void test_vec(Plane p_vec) {
 	print_line("out: " + v0);
 	v0.normal.z = (v0.d / 100.0 * 2.0 - 1.0) * v0.d;
 	print_line("out_F: " + v0);
-
-	/*v0: 0, 0, -0.1, 0.1
-v1: 0, 0, 0, 0.1
-fix: 0, 0, 0, 0.1
-v0: 0, 0, 1.302803, 1.5
-v1: 0, 0, 1.401401, 1.5
-fix: 0, 0, 1.401401, 1.5
-v0: 0, 0, 25.851850, 26
-v1: 0, 0, 25.925926, 26
-fix: 0, 0, 25.925924, 26
-v0: 0, 0, 49.899902, 50
-v1: 0, 0, 49.949947, 50
-fix: 0, 0, 49.949951, 50
-v0: 0, 0, 100, 100
-v1: 0, 0, 100, 100
-fix: 0, 0, 100, 100
-*/
 }
 
 uint32_t ihash(uint32_t a) {
@@ -469,18 +411,15 @@ MainLoop *test() {
 
 		const float pow2to9 = 512.0f;
 		const float B = 15.0f;
-		//const float Emax = 31.0f;
 		const float N = 9.0f;
 
-		float sharedexp = 65408.000f; //(( pow2to9  - 1.0f)/ pow2to9)*powf( 2.0f, 31.0f - 15.0f);
+		float sharedexp = 65408.000f;
 
 		float cRed = MAX(0.0f, MIN(sharedexp, r));
 		float cGreen = MAX(0.0f, MIN(sharedexp, g));
 		float cBlue = MAX(0.0f, MIN(sharedexp, b));
 
 		float cMax = MAX(cRed, MAX(cGreen, cBlue));
-
-		// expp = MAX(-B - 1, log2(maxc)) + 1 + B
 
 		float expp = MAX(-B - 1.0f, floor(Math::log(cMax) / Math_LN2)) + 1.0f + B;
 
@@ -505,14 +444,11 @@ MainLoop *test() {
 		float bb = (rgbe >> 18) & 0x1ff;
 		float eb = (rgbe >> 27);
 		float mb = Math::pow(2, eb - 15.0 - 9.0);
-		;
 		float rd = rb * mb;
 		float gd = gb * mb;
 		float bd = bb * mb;
 
 		print_line("RGBE: " + Color(rd, gd, bd));
-
-		return NULL;
 	}
 
 	print_line("Dvectors: " + itos(MemoryPool::allocs_used));
@@ -543,8 +479,6 @@ MainLoop *test() {
 	print_line("later Mem used: " + itos(MemoryPool::total_memory));
 	print_line("Mlater Ax mem used: " + itos(MemoryPool::max_memory));
 
-	return NULL;
-
 	List<String> cmdlargs = OS::get_singleton()->get_cmdline_args();
 
 	if (cmdlargs.empty()) {
@@ -553,6 +487,11 @@ MainLoop *test() {
 	}
 
 	String test = cmdlargs.back()->get();
+	if (test == "math") {
+		// Not a file name but the test name, abort.
+		// FIXME: This test is ugly as heck, needs fixing :)
+		return NULL;
+	}
 
 	FileAccess *fa = FileAccess::open(test, FileAccess::READ);
 
@@ -564,8 +503,8 @@ MainLoop *test() {
 	Vector<uint8_t> buf;
 	int flen = fa->get_len();
 	buf.resize(fa->get_len() + 1);
-	fa->get_buffer(&buf[0], flen);
-	buf[flen] = 0;
+	fa->get_buffer(buf.ptrw(), flen);
+	buf.write[flen] = 0;
 
 	String code;
 	code.parse_utf8((const char *)&buf[0]);
@@ -576,8 +515,6 @@ MainLoop *test() {
 	} else {
 		print_line("Found class: " + getclass.get_class());
 	}
-
-	return NULL;
 
 	{
 
@@ -590,8 +527,6 @@ MainLoop *test() {
 			Vector<uint8_t> m5b = E->get().operator String().md5_buffer();
 			hashes.push_back(hashes.size());
 		}
-
-		//hashes.resize(50);
 
 		for (int i = nearest_shift(hashes.size()); i < 20; i++) {
 
@@ -620,14 +555,10 @@ MainLoop *test() {
 		}
 
 		print_line("DONE");
-
-		return NULL;
 	}
-	{
 
-		//print_line("NUM: "+itos(237641278346127));
+	{
 		print_line("NUM: " + itos(-128));
-		return NULL;
 	}
 
 	{
@@ -635,14 +566,12 @@ MainLoop *test() {
 		v.normalize();
 		float a = 0.3;
 
-		//Quat q(v,a);
 		Basis m(v, a);
 
 		Vector3 v2(7, 3, 1);
 		v2.normalize();
 		float a2 = 0.8;
 
-		//Quat q(v,a);
 		Basis m2(v2, a2);
 
 		Quat q = m;
@@ -659,7 +588,6 @@ MainLoop *test() {
 		print_line("after v: " + v + " a: " + rtos(a));
 	}
 
-	return NULL;
 	String ret;
 
 	List<String> args;
@@ -668,7 +596,6 @@ MainLoop *test() {
 	print_line("error: " + itos(err));
 	print_line(ret);
 
-	return NULL;
 	Basis m3;
 	m3.rotate(Vector3(1, 0, 0), 0.2);
 	m3.rotate(Vector3(0, 1, 0), 1.77);
@@ -677,17 +604,13 @@ MainLoop *test() {
 	m32.set_euler(m3.get_euler());
 	print_line("ELEULEEEEEEEEEEEEEEEEEER: " + m3.get_euler() + " vs " + m32.get_euler());
 
-	return NULL;
-
 	{
-
 		Dictionary d;
 		d["momo"] = 1;
 		Dictionary b = d;
 		b["44"] = 4;
 	}
 
-	return NULL;
 	print_line("inters: " + rtos(Geometry::segment_intersects_circle(Vector2(-5, 0), Vector2(-2, 0), Vector2(), 1.0)));
 
 	print_line("cross: " + Vector3(1, 2, 3).cross(Vector3(4, 5, 7)));
@@ -749,86 +672,6 @@ MainLoop *test() {
 		print_line("scalar /=: " + v);
 	}
 
-#if 0
-	print_line(String("C:\\momo\\.\\popo\\..\\gongo").simplify_path());
-	print_line(String("res://../popo/..//gongo").simplify_path());
-	print_line(String("res://..").simplify_path());
-
-
-	PoolVector<uint8_t> a;
-	PoolVector<uint8_t> b;
-
-	a.resize(20);
-	b=a;
-	b.resize(30);
-	a=b;
-#endif
-
-#if 0
-	String za = String::utf8("á");
-	printf("unicode: %x\n",za[0]);
-	CharString cs=za.utf8();
-	for(int i=0;i<cs.size();i++) {
-		uint32_t v = uint8_t(cs[i]);
-		printf("%i - %x\n",i,v);
-	}
-	return NULL;
-
-	print_line(String("C:\\window\\system\\momo").path_to("C:\\window\\momonga"));
-	print_line(String("res://momo/sampler").path_to("res://pindonga"));
-	print_line(String("/margarito/terere").path_to("/margarito/pilates"));
-	print_line(String("/algo").path_to("/algo"));
-	print_line(String("c:").path_to("c:\\"));
-	print_line(String("/").path_to("/"));
-
-
-	print_line(itos(sizeof(Variant)));
-	return NULL;
-
-	Vector<StringName> path;
-	path.push_back("three");
-	path.push_back("two");
-	path.push_back("one");
-	path.push_back("comeon");
-	path.revert();
-
-	NodePath np(path,true);
-
-	print_line(np);
-
-
-	return NULL;
-
-	bool a=2;
-
-	print_line(Variant(a));
-
-
-	Transform2D mat2_1;
-	mat2_1.rotate(0.5);
-	Transform2D mat2_2;
-	mat2_2.translate(Vector2(1,2));
-	Transform2D mat2_3 = mat2_1 * mat2_2;
-	mat2_3.affine_invert();
-
-	print_line(mat2_3.elements[0]);
-	print_line(mat2_3.elements[1]);
-	print_line(mat2_3.elements[2]);
-
-
-
-	Transform mat3_1;
-	mat3_1.basis.rotate(Vector3(0,0,1),0.5);
-	Transform mat3_2;
-	mat3_2.translate(Vector3(1,2,0));
-	Transform mat3_3 = mat3_1 * mat3_2;
-	mat3_3.affine_invert();
-
-	print_line(mat3_3.basis.get_axis(0));
-	print_line(mat3_3.basis.get_axis(1));
-	print_line(mat3_3.origin);
-
-#endif
 	return NULL;
 }
-}
+} // namespace TestMath

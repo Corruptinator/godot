@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,11 +27,14 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "editor_log.h"
 
+#include "core/os/keyboard.h"
+#include "core/version.h"
 #include "editor_node.h"
 #include "scene/gui/center_container.h"
-#include "version.h"
+#include "scene/resources/dynamic_font.h"
 
 void EditorLog::_error_handler(void *p_self, const char *p_func, const char *p_file, int p_line, const char *p_error, const char *p_errorexp, ErrorHandlerType p_type) {
 
@@ -46,80 +49,72 @@ void EditorLog::_error_handler(void *p_self, const char *p_func, const char *p_f
 		err_str = String(p_file) + ":" + itos(p_line) + " - " + String(p_error);
 	}
 
-	/*
-	if (!self->is_visible_in_tree())
-		self->emit_signal("show_request");
-	*/
-
-	err_str = " " + err_str;
-	self->add_message(err_str, true);
+	if (p_type == ERR_HANDLER_WARNING) {
+		self->add_message(err_str, MSG_TYPE_WARNING);
+	} else {
+		self->add_message(err_str, MSG_TYPE_ERROR);
+	}
 }
 
 void EditorLog::_notification(int p_what) {
 
 	if (p_what == NOTIFICATION_ENTER_TREE) {
 
-		log->add_color_override("default_color", get_color("font_color", "Tree"));
 		//button->set_icon(get_icon("Console","EditorIcons"));
+		log->add_font_override("normal_font", get_font("output_source", "EditorFonts"));
+	} else if (p_what == NOTIFICATION_THEME_CHANGED) {
+		Ref<DynamicFont> df_output_code = get_font("output_source", "EditorFonts");
+		if (df_output_code.is_valid()) {
+			if (log != NULL) {
+				log->add_font_override("normal_font", get_font("output_source", "EditorFonts"));
+			}
+		}
 	}
-	if (p_what == EditorSettings::NOTIFICATION_EDITOR_SETTINGS_CHANGED) {
-		_override_logger_styles();
-	}
-
-	/*if (p_what==NOTIFICATION_DRAW) {
-
-		RID ci = get_canvas_item();
-		get_stylebox("panel","PopupMenu")->draw(ci,Rect2(Point2(),get_size()));
-		int top_ofs = 20;
-		int border_ofs=4;
-		Ref<StyleBox> style = get_stylebox("normal","TextEdit");
-
-		style->draw(ci,Rect2( Point2(border_ofs,top_ofs),get_size()-Size2(border_ofs*2,top_ofs+border_ofs)));
-	}*/
 }
 
 void EditorLog::_clear_request() {
 
 	log->clear();
+	tool_button->set_icon(Ref<Texture>());
 }
 
 void EditorLog::clear() {
 	_clear_request();
 }
 
-void EditorLog::add_message(const String &p_msg, bool p_error) {
+void EditorLog::add_message(const String &p_msg, MessageType p_type) {
 
 	log->add_newline();
-	if (p_error) {
-		log->push_color(get_color("fg_error", "Editor"));
-		Ref<Texture> icon = get_icon("Error", "EditorIcons");
-		log->add_image(icon);
-		//button->set_icon(icon);
-	} else {
-		//button->set_icon(Ref<Texture>());
+
+	bool restore = p_type != MSG_TYPE_STD;
+	switch (p_type) {
+		case MSG_TYPE_STD: {
+		} break;
+		case MSG_TYPE_ERROR: {
+			log->push_color(get_color("error_color", "Editor"));
+			Ref<Texture> icon = get_icon("Error", "EditorIcons");
+			log->add_image(icon);
+			log->add_text(" ");
+			tool_button->set_icon(icon);
+		} break;
+		case MSG_TYPE_WARNING: {
+			log->push_color(get_color("warning_color", "Editor"));
+			Ref<Texture> icon = get_icon("Warning", "EditorIcons");
+			log->add_image(icon);
+			log->add_text(" ");
+			tool_button->set_icon(icon);
+		} break;
 	}
 
 	log->add_text(p_msg);
-	//button->set_text(p_msg);
 
-	if (p_error)
+	if (restore)
 		log->pop();
 }
 
-/*
-void EditorLog::_dragged(const Point2& p_ofs) {
-
-	int ofs = ec->get_minsize().height;
-	ofs = ofs-p_ofs.y;
-	if (ofs<50)
-		ofs=50;
-	if (ofs>300)
-		ofs=300;
-	ec->set_minsize(Size2(ec->get_minsize().width,ofs));
-	minimum_size_changed();
-
+void EditorLog::set_tool_button(ToolButton *p_tool_button) {
+	tool_button = p_tool_button;
 }
-*/
 
 void EditorLog::_undo_redo_cbk(void *p_self, const String &p_name) {
 
@@ -130,15 +125,12 @@ void EditorLog::_undo_redo_cbk(void *p_self, const String &p_name) {
 void EditorLog::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("_clear_request"), &EditorLog::_clear_request);
-	ClassDB::bind_method("_override_logger_styles", &EditorLog::_override_logger_styles);
-	//ClassDB::bind_method(D_METHOD("_dragged"),&EditorLog::_dragged );
 	ADD_SIGNAL(MethodInfo("clear_request"));
 }
 
 EditorLog::EditorLog() {
 
 	VBoxContainer *vb = this;
-	add_constant_override("separation", get_constant("separation", "VBoxContainer"));
 
 	HBoxContainer *hb = memnew(HBoxContainer);
 	vb->add_child(hb);
@@ -150,25 +142,18 @@ EditorLog::EditorLog() {
 	clearbutton = memnew(Button);
 	hb->add_child(clearbutton);
 	clearbutton->set_text(TTR("Clear"));
+	clearbutton->set_shortcut(ED_SHORTCUT("editor/clear_output", TTR("Clear Output"), KEY_MASK_CMD | KEY_MASK_SHIFT | KEY_K));
 	clearbutton->connect("pressed", this, "_clear_request");
-
-	ec = memnew(Control);
-	vb->add_child(ec);
-	ec->set_custom_minimum_size(Size2(0, 180) * EDSCALE);
-	ec->set_v_size_flags(SIZE_EXPAND_FILL);
-
-	pc = memnew(PanelContainer);
-	ec->add_child(pc);
-	pc->set_area_as_parent_rect();
-	pc->connect("tree_entered", this, "_override_logger_styles");
 
 	log = memnew(RichTextLabel);
 	log->set_scroll_follow(true);
 	log->set_selection_enabled(true);
 	log->set_focus_mode(FOCUS_CLICK);
-	pc->add_child(log);
-	add_message(VERSION_FULL_NAME " (c) 2008-2017 Juan Linietsky, Ariel Manzur.");
-	//log->add_text("Initialization Complete.\n"); //because it looks cool.
+	log->set_custom_minimum_size(Size2(0, 180) * EDSCALE);
+	log->set_v_size_flags(SIZE_EXPAND_FILL);
+	log->set_h_size_flags(SIZE_EXPAND_FILL);
+	vb->add_child(log);
+	add_message(VERSION_FULL_NAME " (c) 2007-2019 Juan Linietsky, Ariel Manzur & Godot Contributors.");
 
 	eh.errfunc = _error_handler;
 	eh.userdata = this;
@@ -176,17 +161,14 @@ EditorLog::EditorLog() {
 
 	current = Thread::get_caller_id();
 
+	add_constant_override("separation", get_constant("separation", "VBoxContainer"));
+
 	EditorNode::get_undo_redo()->set_commit_notify_callback(_undo_redo_cbk, this);
 }
 
 void EditorLog::deinit() {
 
 	remove_error_handler(&eh);
-}
-
-void EditorLog::_override_logger_styles() {
-
-	pc->add_style_override("panel", get_stylebox("normal", "TextEdit"));
 }
 
 EditorLog::~EditorLog() {

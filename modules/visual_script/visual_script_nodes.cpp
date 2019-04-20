@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,12 +27,14 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "visual_script_nodes.h"
 
-#include "global_constants.h"
-#include "os/input.h"
-#include "os/os.h"
-#include "project_settings.h"
+#include "core/engine.h"
+#include "core/global_constants.h"
+#include "core/os/input.h"
+#include "core/os/os.h"
+#include "core/project_settings.h"
 #include "scene/main/node.h"
 #include "scene/main/scene_tree.h"
 
@@ -52,8 +54,8 @@ bool VisualScriptFunction::_set(const StringName &p_name, const Variant &p_value
 		arguments.resize(new_argc);
 
 		for (int i = argc; i < new_argc; i++) {
-			arguments[i].name = "arg" + itos(i + 1);
-			arguments[i].type = Variant::NIL;
+			arguments.write[i].name = "arg" + itos(i + 1);
+			arguments.write[i].type = Variant::NIL;
 		}
 		ports_changed_notify();
 		_change_notify();
@@ -66,7 +68,7 @@ bool VisualScriptFunction::_set(const StringName &p_name, const Variant &p_value
 		if (what == "type") {
 
 			Variant::Type new_type = Variant::Type(int(p_value));
-			arguments[idx].type = new_type;
+			arguments.write[idx].type = new_type;
 			ports_changed_notify();
 
 			return true;
@@ -74,7 +76,7 @@ bool VisualScriptFunction::_set(const StringName &p_name, const Variant &p_value
 
 		if (what == "name") {
 
-			arguments[idx].name = p_value;
+			arguments.write[idx].name = p_value;
 			ports_changed_notify();
 			return true;
 		}
@@ -91,7 +93,7 @@ bool VisualScriptFunction::_set(const StringName &p_name, const Variant &p_value
 	}
 
 	if (p_name == "rpc/mode") {
-		rpc_mode = ScriptInstance::RPCMode(int(p_value));
+		rpc_mode = MultiplayerAPI::RPCMode(int(p_value));
 		return true;
 	}
 
@@ -165,7 +167,7 @@ void VisualScriptFunction::_get_property_list(List<PropertyInfo> *p_list) const 
 		p_list->push_back(PropertyInfo(Variant::INT, "stack/size", PROPERTY_HINT_RANGE, "1,100000"));
 	}
 	p_list->push_back(PropertyInfo(Variant::BOOL, "stack/stackless"));
-	p_list->push_back(PropertyInfo(Variant::INT, "rpc/mode", PROPERTY_HINT_ENUM, "Disabled,Remote,Sync,Master,Slave"));
+	p_list->push_back(PropertyInfo(Variant::INT, "rpc/mode", PROPERTY_HINT_ENUM, "Disabled,Remote,Master,Puppet,Remote Sync,Master Sync,Puppet Sync"));
 }
 
 int VisualScriptFunction::get_output_sequence_port_count() const {
@@ -203,6 +205,8 @@ PropertyInfo VisualScriptFunction::get_output_value_port_info(int p_idx) const {
 	PropertyInfo out;
 	out.type = arguments[p_idx].type;
 	out.name = arguments[p_idx].name;
+	out.hint = arguments[p_idx].hint;
+	out.hint_string = arguments[p_idx].hint_string;
 	return out;
 }
 
@@ -216,11 +220,13 @@ String VisualScriptFunction::get_text() const {
 	return get_name(); //use name as function name I guess
 }
 
-void VisualScriptFunction::add_argument(Variant::Type p_type, const String &p_name, int p_index) {
+void VisualScriptFunction::add_argument(Variant::Type p_type, const String &p_name, int p_index, const PropertyHint p_hint, const String &p_hint_string) {
 
 	Argument arg;
 	arg.name = p_name;
 	arg.type = p_type;
+	arg.hint = p_hint;
+	arg.hint_string = p_hint_string;
 	if (p_index >= 0)
 		arguments.insert(p_index, arg);
 	else
@@ -232,7 +238,7 @@ void VisualScriptFunction::set_argument_type(int p_argidx, Variant::Type p_type)
 
 	ERR_FAIL_INDEX(p_argidx, arguments.size());
 
-	arguments[p_argidx].type = p_type;
+	arguments.write[p_argidx].type = p_type;
 	ports_changed_notify();
 }
 Variant::Type VisualScriptFunction::get_argument_type(int p_argidx) const {
@@ -244,7 +250,7 @@ void VisualScriptFunction::set_argument_name(int p_argidx, const String &p_name)
 
 	ERR_FAIL_INDEX(p_argidx, arguments.size());
 
-	arguments[p_argidx].name = p_name;
+	arguments.write[p_argidx].name = p_name;
 	ports_changed_notify();
 }
 String VisualScriptFunction::get_argument_name(int p_argidx) const {
@@ -265,11 +271,11 @@ int VisualScriptFunction::get_argument_count() const {
 	return arguments.size();
 }
 
-void VisualScriptFunction::set_rpc_mode(ScriptInstance::RPCMode p_mode) {
+void VisualScriptFunction::set_rpc_mode(MultiplayerAPI::RPCMode p_mode) {
 	rpc_mode = p_mode;
 }
 
-ScriptInstance::RPCMode VisualScriptFunction::get_rpc_mode() const {
+MultiplayerAPI::RPCMode VisualScriptFunction::get_rpc_mode() const {
 	return rpc_mode;
 }
 
@@ -317,7 +323,7 @@ VisualScriptFunction::VisualScriptFunction() {
 	stack_size = 256;
 	stack_less = false;
 	sequenced = true;
-	rpc_mode = ScriptInstance::RPC_MODE_DISABLED;
+	rpc_mode = MultiplayerAPI::RPC_MODE_DISABLED;
 }
 
 void VisualScriptFunction::set_stack_less(bool p_enable) {
@@ -389,7 +395,7 @@ PropertyInfo VisualScriptOperator::get_input_value_port_info(int p_idx) const {
 		{ Variant::NIL, Variant::NIL }, //OP_GREATER_EQUAL,
 		//mathematic
 		{ Variant::NIL, Variant::NIL }, //OP_ADD,
-		{ Variant::NIL, Variant::NIL }, //OP_SUBSTRACT,
+		{ Variant::NIL, Variant::NIL }, //OP_SUBTRACT,
 		{ Variant::NIL, Variant::NIL }, //OP_MULTIPLY,
 		{ Variant::NIL, Variant::NIL }, //OP_DIVIDE,
 		{ Variant::NIL, Variant::NIL }, //OP_NEGATE,
@@ -423,7 +429,7 @@ PropertyInfo VisualScriptOperator::get_input_value_port_info(int p_idx) const {
 }
 PropertyInfo VisualScriptOperator::get_output_value_port_info(int p_idx) const {
 	static const Variant::Type port_types[Variant::OP_MAX] = {
-		//comparation
+		//comparison
 		Variant::BOOL, //OP_EQUAL,
 		Variant::BOOL, //OP_NOT_EQUAL,
 		Variant::BOOL, //OP_LESS,
@@ -432,7 +438,7 @@ PropertyInfo VisualScriptOperator::get_output_value_port_info(int p_idx) const {
 		Variant::BOOL, //OP_GREATER_EQUAL,
 		//mathematic
 		Variant::NIL, //OP_ADD,
-		Variant::NIL, //OP_SUBSTRACT,
+		Variant::NIL, //OP_SUBTRACT,
 		Variant::NIL, //OP_MULTIPLY,
 		Variant::NIL, //OP_DIVIDE,
 		Variant::NIL, //OP_NEGATE,
@@ -464,29 +470,29 @@ PropertyInfo VisualScriptOperator::get_output_value_port_info(int p_idx) const {
 }
 
 static const char *op_names[] = {
-	//comparation
-	"Equal", //OP_EQUAL,
-	"NotEqual", //OP_NOT_EQUAL,
-	"Less", //OP_LESS,
-	"LessEqual", //OP_LESS_EQUAL,
-	"Greater", //OP_GREATER,
-	"GreaterEq", //OP_GREATER_EQUAL,
+	//comparison
+	"Are Equal", //OP_EQUAL,
+	"Are Not Equal", //OP_NOT_EQUAL,
+	"Less Than", //OP_LESS,
+	"Less Than or Equal", //OP_LESS_EQUAL,
+	"Greater Than", //OP_GREATER,
+	"Greater Than or Equal", //OP_GREATER_EQUAL,
 	//mathematic
 	"Add", //OP_ADD,
-	"Subtract", //OP_SUBSTRACT,
+	"Subtract", //OP_SUBTRACT,
 	"Multiply", //OP_MULTIPLY,
 	"Divide", //OP_DIVIDE,
 	"Negate", //OP_NEGATE,
 	"Positive", //OP_POSITIVE,
 	"Remainder", //OP_MODULE,
-	"Concat", //OP_STRING_CONCAT,
+	"Concatenate", //OP_STRING_CONCAT,
 	//bitwise
-	"ShiftLeft", //OP_SHIFT_LEFT,
-	"ShiftRight", //OP_SHIFT_RIGHT,
-	"BitAnd", //OP_BIT_AND,
-	"BitOr", //OP_BIT_OR,
-	"BitXor", //OP_BIT_XOR,
-	"BitNeg", //OP_BIT_NEGATE,
+	"Bit Shift Left", //OP_SHIFT_LEFT,
+	"Bit Shift Right", //OP_SHIFT_RIGHT,
+	"Bit And", //OP_BIT_AND,
+	"Bit Or", //OP_BIT_OR,
+	"Bit Xor", //OP_BIT_XOR,
+	"Bit Negate", //OP_BIT_NEGATE,
 	//logic
 	"And", //OP_AND,
 	"Or", //OP_OR,
@@ -498,13 +504,8 @@ static const char *op_names[] = {
 
 String VisualScriptOperator::get_caption() const {
 
-	return op_names[op];
-}
-
-String VisualScriptOperator::get_text() const {
-
 	static const wchar_t *op_names[] = {
-		//comparation
+		//comparison
 		L"A = B", //OP_EQUAL,
 		L"A \u2260 B", //OP_NOT_EQUAL,
 		L"A < B", //OP_LESS,
@@ -513,7 +514,7 @@ String VisualScriptOperator::get_text() const {
 		L"A \u2265 B", //OP_GREATER_EQUAL,
 		//mathematic
 		L"A + B", //OP_ADD,
-		L"A - B", //OP_SUBSTRACT,
+		L"A - B", //OP_SUBTRACT,
 		L"A x B", //OP_MULTIPLY,
 		L"A \u00F7 B", //OP_DIVIDE,
 		L"\u00AC A", //OP_NEGATE,
@@ -532,6 +533,7 @@ String VisualScriptOperator::get_text() const {
 		L"A or B", //OP_OR,
 		L"A xor B", //OP_XOR,
 		L"not A", //OP_NOT,
+		L"A in B", //OP_IN,
 
 	};
 	return op_names[op];
@@ -800,14 +802,8 @@ PropertyInfo VisualScriptVariableGet::get_output_value_port_info(int p_idx) cons
 
 String VisualScriptVariableGet::get_caption() const {
 
-	return "Variable";
+	return "Get " + variable;
 }
-
-String VisualScriptVariableGet::get_text() const {
-
-	return variable;
-}
-
 void VisualScriptVariableGet::set_variable(StringName p_variable) {
 
 	if (variable == p_variable)
@@ -857,7 +853,7 @@ public:
 
 	virtual int step(const Variant **p_inputs, Variant **p_outputs, StartMode p_start_mode, Variant *p_working_mem, Variant::CallError &r_error, String &r_error_str) {
 
-		if (instance->get_variable(variable, p_outputs[0]) == false) {
+		if (!instance->get_variable(variable, p_outputs[0])) {
 			r_error.error = Variant::CallError::CALL_ERROR_INVALID_METHOD;
 			r_error_str = RTR("VariableGet not found in script: ") + "'" + String(variable) + "'";
 			return false;
@@ -925,12 +921,7 @@ PropertyInfo VisualScriptVariableSet::get_output_value_port_info(int p_idx) cons
 
 String VisualScriptVariableSet::get_caption() const {
 
-	return "VariableSet";
-}
-
-String VisualScriptVariableSet::get_text() const {
-
-	return variable;
+	return "Set " + variable;
 }
 
 void VisualScriptVariableSet::set_variable(StringName p_variable) {
@@ -984,7 +975,7 @@ public:
 
 	virtual int step(const Variant **p_inputs, Variant **p_outputs, StartMode p_start_mode, Variant *p_working_mem, Variant::CallError &r_error, String &r_error_str) {
 
-		if (instance->set_variable(variable, *p_inputs[0]) == false) {
+		if (!instance->set_variable(variable, *p_inputs[0])) {
 
 			r_error.error = Variant::CallError::CALL_ERROR_INVALID_METHOD;
 			r_error_str = RTR("VariableSet not found in script: ") + "'" + String(variable) + "'";
@@ -1041,7 +1032,7 @@ PropertyInfo VisualScriptConstant::get_input_value_port_info(int p_idx) const {
 PropertyInfo VisualScriptConstant::get_output_value_port_info(int p_idx) const {
 
 	PropertyInfo pinfo;
-	pinfo.name = "get";
+	pinfo.name = String(value);
 	pinfo.type = type;
 	return pinfo;
 }
@@ -1051,20 +1042,15 @@ String VisualScriptConstant::get_caption() const {
 	return "Constant";
 }
 
-String VisualScriptConstant::get_text() const {
-
-	return String(value);
-}
-
 void VisualScriptConstant::set_constant_type(Variant::Type p_type) {
 
 	if (type == p_type)
 		return;
 
 	type = p_type;
-	ports_changed_notify();
 	Variant::CallError ce;
 	value = Variant::construct(type, NULL, 0, ce);
+	ports_changed_notify();
 	_change_notify();
 }
 
@@ -1109,7 +1095,7 @@ void VisualScriptConstant::_bind_methods() {
 	}
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "type", PROPERTY_HINT_ENUM, argt), "set_constant_type", "get_constant_type");
-	ADD_PROPERTY(PropertyInfo(Variant::NIL, "value"), "set_constant_value", "get_constant_value");
+	ADD_PROPERTY(PropertyInfo(Variant::NIL, "value", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NIL_IS_VARIANT | PROPERTY_USAGE_DEFAULT), "set_constant_value", "get_constant_value");
 }
 
 class VisualScriptNodeInstanceConstant : public VisualScriptNodeInstance {
@@ -1171,10 +1157,20 @@ PropertyInfo VisualScriptPreload::get_input_value_port_info(int p_idx) const {
 
 PropertyInfo VisualScriptPreload::get_output_value_port_info(int p_idx) const {
 
-	PropertyInfo pinfo = PropertyInfo(Variant::OBJECT, "res");
+	PropertyInfo pinfo;
+	pinfo.type = Variant::OBJECT;
 	if (preload.is_valid()) {
 		pinfo.hint = PROPERTY_HINT_RESOURCE_TYPE;
 		pinfo.hint_string = preload->get_class();
+		if (preload->get_path().is_resource_file()) {
+			pinfo.name = preload->get_path();
+		} else if (preload->get_name() != String()) {
+			pinfo.name = preload->get_name();
+		} else {
+			pinfo.name = preload->get_class();
+		}
+	} else {
+		pinfo.name = "<empty>";
 	}
 
 	return pinfo;
@@ -1183,21 +1179,6 @@ PropertyInfo VisualScriptPreload::get_output_value_port_info(int p_idx) const {
 String VisualScriptPreload::get_caption() const {
 
 	return "Preload";
-}
-
-String VisualScriptPreload::get_text() const {
-
-	if (preload.is_valid()) {
-		if (preload->get_path().is_resource_file()) {
-			return preload->get_path();
-		} else if (preload->get_name() != String()) {
-			return preload->get_name();
-		} else {
-			return preload->get_class();
-		}
-	} else {
-		return "<empty>";
-	}
 }
 
 void VisualScriptPreload::set_preload(const Ref<Resource> &p_preload) {
@@ -1288,12 +1269,7 @@ PropertyInfo VisualScriptIndexGet::get_output_value_port_info(int p_idx) const {
 
 String VisualScriptIndexGet::get_caption() const {
 
-	return "IndexGet";
-}
-
-String VisualScriptIndexGet::get_text() const {
-
-	return String("get");
+	return "Get Index";
 }
 
 class VisualScriptNodeInstanceIndexGet : public VisualScriptNodeInstance {
@@ -1368,12 +1344,7 @@ PropertyInfo VisualScriptIndexSet::get_output_value_port_info(int p_idx) const {
 
 String VisualScriptIndexSet::get_caption() const {
 
-	return "IndexSet";
-}
-
-String VisualScriptIndexSet::get_text() const {
-
-	return String("set");
+	return "Set Index";
 }
 
 class VisualScriptNodeInstanceIndexSet : public VisualScriptNodeInstance {
@@ -1436,18 +1407,13 @@ PropertyInfo VisualScriptGlobalConstant::get_input_value_port_info(int p_idx) co
 }
 
 PropertyInfo VisualScriptGlobalConstant::get_output_value_port_info(int p_idx) const {
-
-	return PropertyInfo(Variant::REAL, "value");
+	String name = GlobalConstants::get_global_constant_name(index);
+	return PropertyInfo(Variant::REAL, name);
 }
 
 String VisualScriptGlobalConstant::get_caption() const {
 
-	return "GlobalConst";
-}
-
-String VisualScriptGlobalConstant::get_text() const {
-
-	return GlobalConstants::get_global_constant_name(index);
+	return "Global Constant";
 }
 
 void VisualScriptGlobalConstant::set_global_constant(int p_which) {
@@ -1493,7 +1459,7 @@ void VisualScriptGlobalConstant::_bind_methods() {
 			cc += ",";
 		cc += GlobalConstants::get_global_constant_name(i);
 	}
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "constant/constant", PROPERTY_HINT_ENUM, cc), "set_global_constant", "get_global_constant");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "constant", PROPERTY_HINT_ENUM, cc), "set_global_constant", "get_global_constant");
 }
 
 VisualScriptGlobalConstant::VisualScriptGlobalConstant() {
@@ -1536,17 +1502,12 @@ PropertyInfo VisualScriptClassConstant::get_input_value_port_info(int p_idx) con
 
 PropertyInfo VisualScriptClassConstant::get_output_value_port_info(int p_idx) const {
 
-	return PropertyInfo(Variant::INT, "value");
+	return PropertyInfo(Variant::INT, String(base_type) + "." + String(name));
 }
 
 String VisualScriptClassConstant::get_caption() const {
 
-	return "ClassConst";
-}
-
-String VisualScriptClassConstant::get_text() const {
-
-	return String(base_type) + "." + String(name);
+	return "Class Constant";
 }
 
 void VisualScriptClassConstant::set_class_constant(const StringName &p_which) {
@@ -1598,7 +1559,7 @@ VisualScriptNodeInstance *VisualScriptClassConstant::instance(VisualScriptInstan
 
 void VisualScriptClassConstant::_validate_property(PropertyInfo &property) const {
 
-	if (property.name == "constant/constant") {
+	if (property.name == "constant") {
 
 		List<String> constants;
 		ClassDB::get_integer_constant_list(base_type, &constants, true);
@@ -1622,7 +1583,7 @@ void VisualScriptClassConstant::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_base_type"), &VisualScriptClassConstant::get_base_type);
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "base_type", PROPERTY_HINT_TYPE_STRING, "Object"), "set_base_type", "get_base_type");
-	ADD_PROPERTY(PropertyInfo(Variant::STRING, "constant/constant", PROPERTY_HINT_ENUM, ""), "set_class_constant", "get_class_constant");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "constant", PROPERTY_HINT_ENUM, ""), "set_class_constant", "get_class_constant");
 }
 
 VisualScriptClassConstant::VisualScriptClassConstant() {
@@ -1670,7 +1631,7 @@ PropertyInfo VisualScriptBasicTypeConstant::get_output_value_port_info(int p_idx
 
 String VisualScriptBasicTypeConstant::get_caption() const {
 
-	return "BasicConst";
+	return "Basic Constant";
 }
 
 String VisualScriptBasicTypeConstant::get_text() const {
@@ -1702,7 +1663,7 @@ Variant::Type VisualScriptBasicTypeConstant::get_basic_type() const {
 
 class VisualScriptNodeInstanceBasicTypeConstant : public VisualScriptNodeInstance {
 public:
-	int value;
+	Variant value;
 	bool valid;
 	//virtual int get_working_memory_size() const { return 0; }
 
@@ -1721,16 +1682,16 @@ public:
 VisualScriptNodeInstance *VisualScriptBasicTypeConstant::instance(VisualScriptInstance *p_instance) {
 
 	VisualScriptNodeInstanceBasicTypeConstant *instance = memnew(VisualScriptNodeInstanceBasicTypeConstant);
-	instance->value = Variant::get_numeric_constant_value(type, name, &instance->valid);
+	instance->value = Variant::get_constant_value(type, name, &instance->valid);
 	return instance;
 }
 
 void VisualScriptBasicTypeConstant::_validate_property(PropertyInfo &property) const {
 
-	if (property.name == "constant/constant") {
+	if (property.name == "constant") {
 
 		List<StringName> constants;
-		Variant::get_numeric_constants_for_type(type, &constants);
+		Variant::get_constants_for_type(type, &constants);
 
 		if (constants.size() == 0) {
 			property.usage = 0;
@@ -1760,7 +1721,7 @@ void VisualScriptBasicTypeConstant::_bind_methods() {
 	}
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "basic_type", PROPERTY_HINT_ENUM, argt), "set_basic_type", "get_basic_type");
-	ADD_PROPERTY(PropertyInfo(Variant::STRING, "constant/constant", PROPERTY_HINT_ENUM, ""), "set_basic_type_constant", "get_basic_type_constant");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "constant", PROPERTY_HINT_ENUM, ""), "set_basic_type_constant", "get_basic_type_constant");
 }
 
 VisualScriptBasicTypeConstant::VisualScriptBasicTypeConstant() {
@@ -1775,8 +1736,8 @@ VisualScriptBasicTypeConstant::VisualScriptBasicTypeConstant() {
 const char *VisualScriptMathConstant::const_name[MATH_CONSTANT_MAX] = {
 	"One",
 	"PI",
-	"PIx2",
 	"PI/2",
+	"TAU",
 	"E",
 	"Sqrt2",
 	"INF",
@@ -1786,8 +1747,8 @@ const char *VisualScriptMathConstant::const_name[MATH_CONSTANT_MAX] = {
 double VisualScriptMathConstant::const_value[MATH_CONSTANT_MAX] = {
 	1.0,
 	Math_PI,
-	Math_PI * 2,
 	Math_PI * 0.5,
+	Math_TAU,
 	2.71828182845904523536,
 	Math::sqrt(2.0),
 	Math_INF,
@@ -1825,17 +1786,12 @@ PropertyInfo VisualScriptMathConstant::get_input_value_port_info(int p_idx) cons
 
 PropertyInfo VisualScriptMathConstant::get_output_value_port_info(int p_idx) const {
 
-	return PropertyInfo(Variant::REAL, "value");
+	return PropertyInfo(Variant::REAL, const_name[constant]);
 }
 
 String VisualScriptMathConstant::get_caption() const {
 
-	return "MathConst";
-}
-
-String VisualScriptMathConstant::get_text() const {
-
-	return const_name[constant];
+	return "Math Constant";
 }
 
 void VisualScriptMathConstant::set_math_constant(MathConstant p_which) {
@@ -1881,7 +1837,17 @@ void VisualScriptMathConstant::_bind_methods() {
 			cc += ",";
 		cc += const_name[i];
 	}
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "constant/constant", PROPERTY_HINT_ENUM, cc), "set_math_constant", "get_math_constant");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "constant", PROPERTY_HINT_ENUM, cc), "set_math_constant", "get_math_constant");
+
+	BIND_ENUM_CONSTANT(MATH_CONSTANT_ONE);
+	BIND_ENUM_CONSTANT(MATH_CONSTANT_PI);
+	BIND_ENUM_CONSTANT(MATH_CONSTANT_HALF_PI);
+	BIND_ENUM_CONSTANT(MATH_CONSTANT_TAU);
+	BIND_ENUM_CONSTANT(MATH_CONSTANT_E);
+	BIND_ENUM_CONSTANT(MATH_CONSTANT_SQRT2);
+	BIND_ENUM_CONSTANT(MATH_CONSTANT_INF);
+	BIND_ENUM_CONSTANT(MATH_CONSTANT_NAN);
+	BIND_ENUM_CONSTANT(MATH_CONSTANT_MAX);
 }
 
 VisualScriptMathConstant::VisualScriptMathConstant() {
@@ -1890,7 +1856,7 @@ VisualScriptMathConstant::VisualScriptMathConstant() {
 }
 
 //////////////////////////////////////////
-////////////////GLOBALSINGLETON///////////
+////////////////ENGINESINGLETON///////////
 //////////////////////////////////////////
 
 int VisualScriptEngineSingleton::get_output_sequence_port_count() const {
@@ -1924,17 +1890,12 @@ PropertyInfo VisualScriptEngineSingleton::get_input_value_port_info(int p_idx) c
 
 PropertyInfo VisualScriptEngineSingleton::get_output_value_port_info(int p_idx) const {
 
-	return PropertyInfo(Variant::OBJECT, "instance");
+	return PropertyInfo(Variant::OBJECT, singleton);
 }
 
 String VisualScriptEngineSingleton::get_caption() const {
 
-	return "EngineSingleton";
-}
-
-String VisualScriptEngineSingleton::get_text() const {
-
-	return singleton;
+	return "Get Engine Singleton";
 }
 
 void VisualScriptEngineSingleton::set_singleton(const String &p_string) {
@@ -1965,13 +1926,13 @@ public:
 VisualScriptNodeInstance *VisualScriptEngineSingleton::instance(VisualScriptInstance *p_instance) {
 
 	VisualScriptNodeInstanceEngineSingleton *instance = memnew(VisualScriptNodeInstanceEngineSingleton);
-	instance->singleton = ProjectSettings::get_singleton()->get_singleton_object(singleton);
+	instance->singleton = Engine::get_singleton()->get_singleton_object(singleton);
 	return instance;
 }
 
 VisualScriptEngineSingleton::TypeGuess VisualScriptEngineSingleton::guess_output_type(TypeGuess *p_inputs, int p_output) const {
 
-	Object *obj = ProjectSettings::get_singleton()->get_singleton_object(singleton);
+	Object *obj = Engine::get_singleton()->get_singleton_object(singleton);
 	TypeGuess tg;
 	tg.type = Variant::OBJECT;
 	if (obj) {
@@ -1989,11 +1950,11 @@ void VisualScriptEngineSingleton::_bind_methods() {
 
 	String cc;
 
-	List<ProjectSettings::Singleton> singletons;
+	List<Engine::Singleton> singletons;
 
-	ProjectSettings::get_singleton()->get_singletons(&singletons);
+	Engine::get_singleton()->get_singletons(&singletons);
 
-	for (List<ProjectSettings::Singleton>::Element *E = singletons.front(); E; E = E->next()) {
+	for (List<Engine::Singleton>::Element *E = singletons.front(); E; E = E->next()) {
 		if (E->get().name == "VS" || E->get().name == "PS" || E->get().name == "PS2D" || E->get().name == "AS" || E->get().name == "TS" || E->get().name == "SS" || E->get().name == "SS2D")
 			continue; //skip these, too simple named
 
@@ -2002,7 +1963,7 @@ void VisualScriptEngineSingleton::_bind_methods() {
 		cc += E->get().name;
 	}
 
-	ADD_PROPERTY(PropertyInfo(Variant::STRING, "constant/constant", PROPERTY_HINT_ENUM, cc), "set_singleton", "get_singleton");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "constant", PROPERTY_HINT_ENUM, cc), "set_singleton", "get_singleton");
 }
 
 VisualScriptEngineSingleton::VisualScriptEngineSingleton() {
@@ -2045,17 +2006,12 @@ PropertyInfo VisualScriptSceneNode::get_input_value_port_info(int p_idx) const {
 
 PropertyInfo VisualScriptSceneNode::get_output_value_port_info(int p_idx) const {
 
-	return PropertyInfo(Variant::OBJECT, "node");
+	return PropertyInfo(Variant::OBJECT, path.simplified());
 }
 
 String VisualScriptSceneNode::get_caption() const {
 
-	return "SceneNode";
-}
-
-String VisualScriptSceneNode::get_text() const {
-
-	return path.simplified();
+	return "Get Scene Node";
 }
 
 void VisualScriptSceneNode::set_node_path(const NodePath &p_path) {
@@ -2079,7 +2035,7 @@ public:
 
 	virtual int step(const Variant **p_inputs, Variant **p_outputs, StartMode p_start_mode, Variant *p_working_mem, Variant::CallError &r_error, String &r_error_str) {
 
-		Node *node = instance->get_owner_ptr()->cast_to<Node>();
+		Node *node = Object::cast_to<Node>(instance->get_owner_ptr());
 		if (!node) {
 			r_error.error = Variant::CallError::CALL_ERROR_INVALID_METHOD;
 			r_error_str = "Base object is not a Node!";
@@ -2087,7 +2043,7 @@ public:
 		}
 
 		Node *another = node->get_node(path);
-		if (!node) {
+		if (!another) {
 			r_error.error = Variant::CallError::CALL_ERROR_INVALID_METHOD;
 			r_error_str = "Path does not lead Node!";
 			return 0;
@@ -2143,10 +2099,7 @@ VisualScriptSceneNode::TypeGuess VisualScriptSceneNode::guess_output_type(TypeGu
 		return tg;
 
 	MainLoop *main_loop = OS::get_singleton()->get_main_loop();
-	if (!main_loop)
-		return tg;
-
-	SceneTree *scene_tree = main_loop->cast_to<SceneTree>();
+	SceneTree *scene_tree = Object::cast_to<SceneTree>(main_loop);
 
 	if (!scene_tree)
 		return tg;
@@ -2181,10 +2134,7 @@ void VisualScriptSceneNode::_validate_property(PropertyInfo &property) const {
 			return;
 
 		MainLoop *main_loop = OS::get_singleton()->get_main_loop();
-		if (!main_loop)
-			return;
-
-		SceneTree *scene_tree = main_loop->cast_to<SceneTree>();
+		SceneTree *scene_tree = Object::cast_to<SceneTree>(main_loop);
 
 		if (!scene_tree)
 			return;
@@ -2252,17 +2202,12 @@ PropertyInfo VisualScriptSceneTree::get_input_value_port_info(int p_idx) const {
 
 PropertyInfo VisualScriptSceneTree::get_output_value_port_info(int p_idx) const {
 
-	return PropertyInfo(Variant::OBJECT, "instance");
+	return PropertyInfo(Variant::OBJECT, "Scene Tree", PROPERTY_HINT_TYPE_STRING, "SceneTree");
 }
 
 String VisualScriptSceneTree::get_caption() const {
 
-	return "SceneTree";
-}
-
-String VisualScriptSceneTree::get_text() const {
-
-	return "";
+	return "Get Scene Tree";
 }
 
 class VisualScriptNodeInstanceSceneTree : public VisualScriptNodeInstance {
@@ -2274,7 +2219,7 @@ public:
 
 	virtual int step(const Variant **p_inputs, Variant **p_outputs, StartMode p_start_mode, Variant *p_working_mem, Variant::CallError &r_error, String &r_error_str) {
 
-		Node *node = instance->get_owner_ptr()->cast_to<Node>();
+		Node *node = Object::cast_to<Node>(instance->get_owner_ptr());
 		if (!node) {
 			r_error.error = Variant::CallError::CALL_ERROR_INVALID_METHOD;
 			r_error_str = "Base object is not a Node!";
@@ -2354,17 +2299,12 @@ PropertyInfo VisualScriptResourcePath::get_input_value_port_info(int p_idx) cons
 
 PropertyInfo VisualScriptResourcePath::get_output_value_port_info(int p_idx) const {
 
-	return PropertyInfo(Variant::STRING, "path");
+	return PropertyInfo(Variant::STRING, path);
 }
 
 String VisualScriptResourcePath::get_caption() const {
 
-	return "ResourcePath";
-}
-
-String VisualScriptResourcePath::get_text() const {
-
-	return path;
+	return "Resource Path";
 }
 
 void VisualScriptResourcePath::set_resource_path(const String &p_path) {
@@ -2446,20 +2386,18 @@ PropertyInfo VisualScriptSelf::get_input_value_port_info(int p_idx) const {
 
 PropertyInfo VisualScriptSelf::get_output_value_port_info(int p_idx) const {
 
-	return PropertyInfo(Variant::OBJECT, "instance");
+	String type_name;
+	if (get_visual_script().is_valid())
+		type_name = get_visual_script()->get_instance_base_type();
+	else
+		type_name = "instance";
+
+	return PropertyInfo(Variant::OBJECT, type_name);
 }
 
 String VisualScriptSelf::get_caption() const {
 
-	return "Self";
-}
-
-String VisualScriptSelf::get_text() const {
-
-	if (get_visual_script().is_valid())
-		return get_visual_script()->get_instance_base_type();
-	else
-		return "";
+	return "Get Self";
 }
 
 class VisualScriptNodeInstanceSelf : public VisualScriptNodeInstance {
@@ -2685,7 +2623,7 @@ VisualScriptNodeInstance *VisualScriptCustomNode::instance(VisualScriptInstance 
 }
 
 void VisualScriptCustomNode::_script_changed() {
-	ports_changed_notify();
+	call_deferred("ports_changed_notify");
 }
 
 void VisualScriptCustomNode::_bind_methods() {
@@ -2708,13 +2646,16 @@ void VisualScriptCustomNode::_bind_methods() {
 	BIND_VMETHOD(MethodInfo(Variant::STRING, "_get_category"));
 
 	BIND_VMETHOD(MethodInfo(Variant::INT, "_get_working_memory_size"));
-	BIND_VMETHOD(MethodInfo(Variant::NIL, "_step:Variant", PropertyInfo(Variant::ARRAY, "inputs"), PropertyInfo(Variant::ARRAY, "outputs"), PropertyInfo(Variant::INT, "start_mode"), PropertyInfo(Variant::ARRAY, "working_mem")));
+
+	MethodInfo stepmi(Variant::NIL, "_step", PropertyInfo(Variant::ARRAY, "inputs"), PropertyInfo(Variant::ARRAY, "outputs"), PropertyInfo(Variant::INT, "start_mode"), PropertyInfo(Variant::ARRAY, "working_mem"));
+	stepmi.return_val.usage |= PROPERTY_USAGE_NIL_IS_VARIANT;
+	BIND_VMETHOD(stepmi);
 
 	ClassDB::bind_method(D_METHOD("_script_changed"), &VisualScriptCustomNode::_script_changed);
 
-	BIND_CONSTANT(START_MODE_BEGIN_SEQUENCE);
-	BIND_CONSTANT(START_MODE_CONTINUE_SEQUENCE);
-	BIND_CONSTANT(START_MODE_RESUME_YIELD);
+	BIND_ENUM_CONSTANT(START_MODE_BEGIN_SEQUENCE);
+	BIND_ENUM_CONSTANT(START_MODE_CONTINUE_SEQUENCE);
+	BIND_ENUM_CONSTANT(START_MODE_RESUME_YIELD);
 
 	BIND_CONSTANT(STEP_PUSH_STACK_BIT);
 	BIND_CONSTANT(STEP_GO_BACK_BIT);
@@ -2845,7 +2786,9 @@ VisualScriptNodeInstance *VisualScriptSubCall::instance(VisualScriptInstance *p_
 
 void VisualScriptSubCall::_bind_methods() {
 
-	BIND_VMETHOD(MethodInfo(Variant::NIL, "_subcall:Variant", PropertyInfo(Variant::NIL, "arguments:Variant")));
+	MethodInfo scmi(Variant::NIL, "_subcall", PropertyInfo(Variant::NIL, "arguments"));
+	scmi.return_val.usage |= PROPERTY_USAGE_NIL_IS_VARIANT;
+	BIND_VMETHOD(scmi);
 }
 
 VisualScriptSubCall::VisualScriptSubCall() {
@@ -3020,12 +2963,7 @@ PropertyInfo VisualScriptConstructor::get_output_value_port_info(int p_idx) cons
 
 String VisualScriptConstructor::get_caption() const {
 
-	return "Construct";
-}
-
-String VisualScriptConstructor::get_text() const {
-
-	return "new " + Variant::get_type_name(type) + "()";
+	return "Construct " + Variant::get_type_name(type);
 }
 
 String VisualScriptConstructor::get_category() const {
@@ -3095,8 +3033,8 @@ void VisualScriptConstructor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_constructor", "constructor"), &VisualScriptConstructor::set_constructor);
 	ClassDB::bind_method(D_METHOD("get_constructor"), &VisualScriptConstructor::get_constructor);
 
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "type", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR), "set_constructor_type", "get_constructor_type");
-	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "constructor", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR), "set_constructor", "get_constructor");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "type", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR | PROPERTY_USAGE_INTERNAL), "set_constructor_type", "get_constructor_type");
+	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "constructor", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR | PROPERTY_USAGE_INTERNAL), "set_constructor", "get_constructor");
 }
 
 VisualScriptConstructor::VisualScriptConstructor() {
@@ -3151,17 +3089,12 @@ PropertyInfo VisualScriptLocalVar::get_input_value_port_info(int p_idx) const {
 }
 PropertyInfo VisualScriptLocalVar::get_output_value_port_info(int p_idx) const {
 
-	return PropertyInfo(type, "get");
+	return PropertyInfo(type, name);
 }
 
 String VisualScriptLocalVar::get_caption() const {
 
-	return "LocalVarGet";
-}
-
-String VisualScriptLocalVar::get_text() const {
-
-	return name;
+	return "Get Local Var";
 }
 
 String VisualScriptLocalVar::get_category() const {
@@ -3277,7 +3210,7 @@ PropertyInfo VisualScriptLocalVarSet::get_output_value_port_info(int p_idx) cons
 
 String VisualScriptLocalVarSet::get_caption() const {
 
-	return "LocalVarSet";
+	return "Set Local Var";
 }
 
 String VisualScriptLocalVarSet::get_text() const {
@@ -3415,12 +3348,7 @@ PropertyInfo VisualScriptInputAction::get_output_value_port_info(int p_idx) cons
 
 String VisualScriptInputAction::get_caption() const {
 
-	return "Action";
-}
-
-String VisualScriptInputAction::get_text() const {
-
-	return name;
+	return "Action " + name;
 }
 
 String VisualScriptInputAction::get_category() const {
@@ -3536,6 +3464,11 @@ void VisualScriptInputAction::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "action"), "set_action_name", "get_action_name");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "mode", PROPERTY_HINT_ENUM, "Pressed,Released,JustPressed,JustReleased"), "set_action_mode", "get_action_mode");
+
+	BIND_ENUM_CONSTANT(MODE_PRESSED);
+	BIND_ENUM_CONSTANT(MODE_RELEASED);
+	BIND_ENUM_CONSTANT(MODE_JUST_PRESSED);
+	BIND_ENUM_CONSTANT(MODE_JUST_RELEASED);
 }
 
 VisualScriptInputAction::VisualScriptInputAction() {
@@ -3583,12 +3516,7 @@ PropertyInfo VisualScriptDeconstruct::get_output_value_port_info(int p_idx) cons
 
 String VisualScriptDeconstruct::get_caption() const {
 
-	return "Deconstruct";
-}
-
-String VisualScriptDeconstruct::get_text() const {
-
-	return "from " + Variant::get_type_name(type) + ":";
+	return "Deconstruct " + Variant::get_type_name(type);
 }
 
 String VisualScriptDeconstruct::get_category() const {
@@ -3636,8 +3564,8 @@ void VisualScriptDeconstruct::_set_elem_cache(const Array &p_elements) {
 	ERR_FAIL_COND(p_elements.size() % 2 == 1);
 	elements.resize(p_elements.size() / 2);
 	for (int i = 0; i < elements.size(); i++) {
-		elements[i].name = p_elements[i * 2 + 0];
-		elements[i].type = Variant::Type(int(p_elements[i * 2 + 1]));
+		elements.write[i].name = p_elements[i * 2 + 0];
+		elements.write[i].type = Variant::Type(int(p_elements[i * 2 + 1]));
 	}
 }
 
@@ -3682,7 +3610,7 @@ VisualScriptNodeInstance *VisualScriptDeconstruct::instance(VisualScriptInstance
 	instance->instance = p_instance;
 	instance->outputs.resize(elements.size());
 	for (int i = 0; i < elements.size(); i++) {
-		instance->outputs[i] = elements[i].name;
+		instance->outputs.write[i] = elements[i].name;
 	}
 
 	return instance;
@@ -3705,7 +3633,7 @@ void VisualScriptDeconstruct::_bind_methods() {
 	}
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "type", PROPERTY_HINT_ENUM, argt), "set_deconstruct_type", "get_deconstruct_type");
-	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "elem_cache", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR), "_set_elem_cache", "_get_elem_cache");
+	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "elem_cache", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR | PROPERTY_USAGE_INTERNAL), "_set_elem_cache", "_get_elem_cache");
 }
 
 VisualScriptDeconstruct::VisualScriptDeconstruct() {
@@ -3728,11 +3656,11 @@ void register_visual_script_nodes() {
 	VisualScriptLanguage::singleton->add_register_func("data/preload", create_node_generic<VisualScriptPreload>);
 	VisualScriptLanguage::singleton->add_register_func("data/action", create_node_generic<VisualScriptInputAction>);
 
-	VisualScriptLanguage::singleton->add_register_func("constant/constants/constant", create_node_generic<VisualScriptConstant>);
-	VisualScriptLanguage::singleton->add_register_func("constant/constants/math_constant", create_node_generic<VisualScriptMathConstant>);
-	VisualScriptLanguage::singleton->add_register_func("constant/constants/class_constant", create_node_generic<VisualScriptClassConstant>);
-	VisualScriptLanguage::singleton->add_register_func("constant/constants/global_constant", create_node_generic<VisualScriptGlobalConstant>);
-	VisualScriptLanguage::singleton->add_register_func("constant/constants/basic_type_constant", create_node_generic<VisualScriptBasicTypeConstant>);
+	VisualScriptLanguage::singleton->add_register_func("constants/constant", create_node_generic<VisualScriptConstant>);
+	VisualScriptLanguage::singleton->add_register_func("constants/math_constant", create_node_generic<VisualScriptMathConstant>);
+	VisualScriptLanguage::singleton->add_register_func("constants/class_constant", create_node_generic<VisualScriptClassConstant>);
+	VisualScriptLanguage::singleton->add_register_func("constants/global_constant", create_node_generic<VisualScriptGlobalConstant>);
+	VisualScriptLanguage::singleton->add_register_func("constants/basic_type_constant", create_node_generic<VisualScriptBasicTypeConstant>);
 
 	VisualScriptLanguage::singleton->add_register_func("custom/custom_node", create_node_generic<VisualScriptCustomNode>);
 	VisualScriptLanguage::singleton->add_register_func("custom/sub_call", create_node_generic<VisualScriptSubCall>);
@@ -3748,7 +3676,7 @@ void register_visual_script_nodes() {
 	VisualScriptLanguage::singleton->add_register_func("operators/compare/greater_equal", create_op_node<Variant::OP_GREATER_EQUAL>);
 	//mathematic
 	VisualScriptLanguage::singleton->add_register_func("operators/math/add", create_op_node<Variant::OP_ADD>);
-	VisualScriptLanguage::singleton->add_register_func("operators/math/subtract", create_op_node<Variant::OP_SUBSTRACT>);
+	VisualScriptLanguage::singleton->add_register_func("operators/math/subtract", create_op_node<Variant::OP_SUBTRACT>);
 	VisualScriptLanguage::singleton->add_register_func("operators/math/multiply", create_op_node<Variant::OP_MULTIPLY>);
 	VisualScriptLanguage::singleton->add_register_func("operators/math/divide", create_op_node<Variant::OP_DIVIDE>);
 	VisualScriptLanguage::singleton->add_register_func("operators/math/negate", create_op_node<Variant::OP_NEGATE>);
@@ -3780,18 +3708,18 @@ void register_visual_script_nodes() {
 		for (List<MethodInfo>::Element *E = constructors.front(); E; E = E->next()) {
 
 			if (E->get().arguments.size() > 0) {
-
-				String name = "functions/constructors/" + Variant::get_type_name(Variant::Type(i)) + " ( ";
+				String name = "functions/constructors/" + Variant::get_type_name(Variant::Type(i)) + "(";
 				for (int j = 0; j < E->get().arguments.size(); j++) {
-					if (j > 0)
+					if (j > 0) {
 						name += ", ";
-					if (E->get().arguments.size() == 1)
+					}
+					if (E->get().arguments.size() == 1) {
 						name += Variant::get_type_name(E->get().arguments[j].type);
-					else
+					} else {
 						name += E->get().arguments[j].name;
+					}
 				}
-				name += ") ";
-
+				name += ")";
 				VisualScriptLanguage::singleton->add_register_func(name, create_constructor_node);
 				Pair<Variant::Type, MethodInfo> pair;
 				pair.first = Variant::Type(i);

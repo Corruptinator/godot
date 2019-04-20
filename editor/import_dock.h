@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,13 +27,17 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef IMPORTDOCK_H
 #define IMPORTDOCK_H
 
-#include "editor_file_system.h"
-#include "io/resource_import.h"
-#include "property_editor.h"
+#include "core/io/config_file.h"
+#include "core/io/resource_importer.h"
+#include "editor/editor_file_system.h"
+#include "editor/editor_inspector.h"
 #include "scene/gui/box_container.h"
+#include "scene/gui/dialogs.h"
+#include "scene/gui/menu_button.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/popup_menu.h"
 
@@ -41,20 +45,27 @@ class ImportDockParameters;
 class ImportDock : public VBoxContainer {
 	GDCLASS(ImportDock, VBoxContainer)
 
-	LineEdit *imported;
+	Label *imported;
 	OptionButton *import_as;
 	MenuButton *preset;
-	PropertyEditor *import_opts;
+	EditorInspector *import_opts;
 
 	List<PropertyInfo> properties;
 	Map<StringName, Variant> property_values;
 
+	ConfirmationDialog *reimport_confirm;
+	Label *label_warning;
 	Button *import;
 
 	ImportDockParameters *params;
 
 	void _preset_selected(int p_idx);
+	void _importer_selected(int i_idx);
+	void _update_options(const Ref<ConfigFile> &p_config = Ref<ConfigFile>());
 
+	void _property_toggled(const StringName &p_prop, bool p_checked);
+	void _reimport_attempt();
+	void _reimport_and_restart();
 	void _reimport();
 
 	enum {
@@ -65,6 +76,7 @@ class ImportDock : public VBoxContainer {
 
 protected:
 	static void _bind_methods();
+	void _notification(int p_what);
 
 public:
 	void set_edit_path(const String &p_path);

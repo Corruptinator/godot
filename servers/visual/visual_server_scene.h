@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,17 +27,17 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef VISUALSERVERSCENE_H
 #define VISUALSERVERSCENE_H
 
 #include "servers/visual/rasterizer.h"
 
-#include "allocators.h"
-#include "geometry.h"
-#include "octree.h"
-#include "os/semaphore.h"
-#include "os/thread.h"
-#include "self_list.h"
+#include "core/math/geometry.h"
+#include "core/math/octree.h"
+#include "core/os/semaphore.h"
+#include "core/os/thread.h"
+#include "core/self_list.h"
 #include "servers/arvr/arvr_interface.h"
 
 class VisualServerScene {
@@ -54,6 +54,8 @@ public:
 	uint64_t render_pass;
 
 	static VisualServerScene *singleton;
+
+// FIXME: Kept as reference for future implementation
 #if 0
 	struct Portal {
 
@@ -67,34 +69,6 @@ public:
 
 		Portal() { enabled=true; disable_distance=50; disable_color=Color(); connect_range=0.8; }
 	};
-
-	struct BakedLight {
-
-		Rasterizer::BakedLightData data;
-		PoolVector<int> sampler;
-		AABB octree_aabb;
-		Size2i octree_tex_size;
-		Size2i light_tex_size;
-
-	};
-
-	struct BakedLightSampler {
-
-		float params[BAKED_LIGHT_SAMPLER_MAX];
-		int resolution;
-		Vector<Vector3> dp_cache;
-
-		BakedLightSampler() {
-			params[BAKED_LIGHT_SAMPLER_STRENGTH]=1.0;
-			params[BAKED_LIGHT_SAMPLER_ATTENUATION]=1.0;
-			params[BAKED_LIGHT_SAMPLER_RADIUS]=1.0;
-			params[BAKED_LIGHT_SAMPLER_DETAIL_RATIO]=0.1;
-			resolution=16;
-		}
-	};
-
-	void _update_baked_light_sampler_dp_cache(BakedLightSampler * blsamp);
-
 #endif
 
 	/* CAMERA API */
@@ -118,9 +92,9 @@ public:
 		Camera() {
 
 			visible_layers = 0xFFFFFFFF;
-			fov = 65;
+			fov = 70;
 			type = PERSPECTIVE;
-			znear = 0.1;
+			znear = 0.05;
 			zfar = 100;
 			size = 1.0;
 			vaspect = false;
@@ -137,38 +111,6 @@ public:
 	virtual void camera_set_environment(RID p_camera, RID p_env);
 	virtual void camera_set_use_vertical_aspect(RID p_camera, bool p_enable);
 
-	/*
-
-	struct RoomInfo {
-
-		Transform affine_inverse;
-		Room *room;
-		List<Instance*> owned_geometry_instances;
-		List<Instance*> owned_portal_instances;
-		List<Instance*> owned_room_instances;
-		List<Instance*> owned_light_instances; //not used, but just for the sake of it
-		Set<Instance*> disconnected_child_portals;
-		Set<Instance*> owned_autoroom_geometry;
-		uint64_t last_visited_pass;
-		RoomInfo() { last_visited_pass=0; }
-
-	};
-
-	struct InstancePortal {
-
-		Portal *portal;
-		Set<Instance*> candidate_set;
-		Instance *connected;
-		uint64_t last_visited_pass;
-
-		Plane plane_cache;
-		Vector<Vector3> transformed_point_cache;
-
-
-		PortalInfo() { connected=NULL; last_visited_pass=0;}
-	};
-*/
-
 	/* SCENARIO API */
 
 	struct Instance;
@@ -177,7 +119,6 @@ public:
 
 		VS::ScenarioDebugMode debug;
 		RID self;
-		// well wtf, balloon allocator is slower?
 
 		Octree<Instance, true> octree;
 
@@ -225,8 +166,9 @@ public:
 
 		SelfList<Instance> update_item;
 
-		Rect3 aabb;
-		Rect3 transformed_aabb;
+		AABB aabb;
+		AABB transformed_aabb;
+		AABB *custom_aabb; // <Zylann> would using aabb directly with a bool be better?
 		float extra_margin;
 		uint32_t object_ID;
 
@@ -235,10 +177,6 @@ public:
 		float lod_begin_hysteresis;
 		float lod_end_hysteresis;
 		RID lod_instance;
-
-		Instance *room;
-		SelfList<Instance> room_item;
-		bool visible_in_all_rooms;
 
 		uint64_t last_render_pass;
 		uint64_t last_frame_pass;
@@ -252,18 +190,14 @@ public:
 			singleton->instance_set_base(self, RID());
 		}
 
-		virtual void base_changed() {
+		virtual void base_changed(bool p_aabb, bool p_materials) {
 
-			singleton->_instance_queue_update(this, true, true);
+			singleton->_instance_queue_update(this, p_aabb, p_materials);
 		}
 
-		virtual void base_material_changed() {
-
-			singleton->_instance_queue_update(this, false, true);
-		}
-
-		Instance()
-			: scenario_item(this), update_item(this), room_item(this) {
+		Instance() :
+				scenario_item(this),
+				update_item(this) {
 
 			octree_id = 0;
 			scenario = NULL;
@@ -281,19 +215,20 @@ public:
 			lod_begin_hysteresis = 0;
 			lod_end_hysteresis = 0;
 
-			room = NULL;
-			visible_in_all_rooms = false;
-
 			last_render_pass = 0;
 			last_frame_pass = 0;
 			version = 1;
 			base_data = NULL;
+
+			custom_aabb = NULL;
 		}
 
 		~Instance() {
 
 			if (base_data)
 				memdelete(base_data);
+			if (custom_aabb)
+				memdelete(custom_aabb);
 		}
 	};
 
@@ -305,6 +240,7 @@ public:
 		List<Instance *> lighting;
 		bool lighting_dirty;
 		bool can_cast_shadows;
+		bool material_is_animated;
 
 		List<Instance *> reflection_probes;
 		bool reflection_dirty;
@@ -312,11 +248,14 @@ public:
 		List<Instance *> gi_probes;
 		bool gi_probes_dirty;
 
+		List<Instance *> lightmap_captures;
+
 		InstanceGeometryData() {
 
 			lighting_dirty = false;
 			reflection_dirty = true;
 			can_cast_shadows = true;
+			material_is_animated = true;
 			gi_probes_dirty = true;
 		}
 	};
@@ -337,8 +276,8 @@ public:
 
 		int render_step;
 
-		InstanceReflectionProbeData()
-			: update_list(this) {
+		InstanceReflectionProbeData() :
+				update_list(this) {
 
 			reflection_dirty = true;
 			render_step = -1;
@@ -396,6 +335,7 @@ public:
 			float attenuation;
 			float spot_angle;
 			float spot_attenuation;
+			bool visible;
 
 			bool operator==(const LightCache &p_cache) {
 
@@ -406,7 +346,13 @@ public:
 						radius == p_cache.radius &&
 						attenuation == p_cache.attenuation &&
 						spot_angle == p_cache.spot_angle &&
-						spot_attenuation == p_cache.spot_attenuation);
+						spot_attenuation == p_cache.spot_attenuation &&
+						visible == p_cache.visible);
+			}
+
+			bool operator!=(const LightCache &p_cache) {
+
+				return !operator==(p_cache);
 			}
 
 			LightCache() {
@@ -417,6 +363,7 @@ public:
 				attenuation = 1.0;
 				spot_angle = 1.0;
 				spot_attenuation = 1.0;
+				visible = true;
 			}
 		};
 
@@ -463,20 +410,37 @@ public:
 
 		SelfList<InstanceGIProbeData> update_element;
 
-		InstanceGIProbeData()
-			: update_element(this) {
+		InstanceGIProbeData() :
+				update_element(this) {
 			invalid = true;
 			base_version = 0;
+			dynamic.updating_stage = GI_UPDATE_STAGE_CHECK;
 		}
 	};
 
 	SelfList<InstanceGIProbeData>::List gi_probe_update_list;
 
+	struct InstanceLightmapCaptureData : public InstanceBaseData {
+
+		struct PairInfo {
+			List<Instance *>::Element *L; //iterator in geometry
+			Instance *geometry;
+		};
+		List<PairInfo> geometries;
+
+		Set<Instance *> users;
+
+		InstanceLightmapCaptureData() {
+		}
+	};
+
+	int instance_cull_count;
 	Instance *instance_cull_result[MAX_INSTANCE_CULL];
 	Instance *instance_shadow_cull_result[MAX_INSTANCE_CULL]; //used for generating shadowmaps
 	Instance *light_cull_result[MAX_LIGHTS_CULLED];
 	RID light_instance_cull_result[MAX_LIGHTS_CULLED];
 	int light_cull_count;
+	int directional_light_count;
 	RID reflection_probe_instance_cull_result[MAX_REFLECTION_PROBES_CULLED];
 	int reflection_probe_cull_count;
 
@@ -493,15 +457,17 @@ public:
 	virtual void instance_set_blend_shape_weight(RID p_instance, int p_shape, float p_weight);
 	virtual void instance_set_surface_material(RID p_instance, int p_surface, RID p_material);
 	virtual void instance_set_visible(RID p_instance, bool p_visible);
+	virtual void instance_set_use_lightmap(RID p_instance, RID p_lightmap_instance, RID p_lightmap);
+
+	virtual void instance_set_custom_aabb(RID p_instance, AABB p_aabb);
 
 	virtual void instance_attach_skeleton(RID p_instance, RID p_skeleton);
 	virtual void instance_set_exterior(RID p_instance, bool p_enabled);
-	virtual void instance_set_room(RID p_instance, RID p_room);
 
 	virtual void instance_set_extra_visibility_margin(RID p_instance, real_t p_margin);
 
 	// don't use these in a game!
-	virtual Vector<ObjectID> instances_cull_aabb(const Rect3 &p_aabb, RID p_scenario = RID()) const;
+	virtual Vector<ObjectID> instances_cull_aabb(const AABB &p_aabb, RID p_scenario = RID()) const;
 	virtual Vector<ObjectID> instances_cull_ray(const Vector3 &p_from, const Vector3 &p_to, RID p_scenario = RID()) const;
 	virtual Vector<ObjectID> instances_cull_convex(const Vector<Plane> &p_convex, RID p_scenario = RID()) const;
 
@@ -515,10 +481,12 @@ public:
 	_FORCE_INLINE_ void _update_instance(Instance *p_instance);
 	_FORCE_INLINE_ void _update_instance_aabb(Instance *p_instance);
 	_FORCE_INLINE_ void _update_dirty_instance(Instance *p_instance);
+	_FORCE_INLINE_ void _update_instance_lightmap_captures(Instance *p_instance);
 
-	_FORCE_INLINE_ void _light_instance_update_shadow(Instance *p_instance, const Transform p_cam_transform, const CameraMatrix &p_cam_projection, bool p_cam_orthogonal, RID p_shadow_atlas, Scenario *p_scenario);
+	_FORCE_INLINE_ bool _light_instance_update_shadow(Instance *p_instance, const Transform p_cam_transform, const CameraMatrix &p_cam_projection, bool p_cam_orthogonal, RID p_shadow_atlas, Scenario *p_scenario);
 
-	void _render_scene(const Transform p_cam_transform, const CameraMatrix &p_cam_projection, bool p_cam_orthogonal, RID p_force_environment, uint32_t p_visible_layers, RID p_scenario, RID p_shadow_atlas, RID p_reflection_probe, int p_reflection_probe_pass);
+	void _prepare_scene(const Transform p_cam_transform, const CameraMatrix &p_cam_projection, bool p_cam_orthogonal, RID p_force_environment, uint32_t p_visible_layers, RID p_scenario, RID p_shadow_atlas, RID p_reflection_probe);
+	void _render_scene(const Transform p_cam_transform, const CameraMatrix &p_cam_projection, bool p_cam_orthogonal, RID p_force_environment, RID p_scenario, RID p_shadow_atlas, RID p_reflection_probe, int p_reflection_probe_pass);
 	void render_empty_scene(RID p_scenario, RID p_shadow_atlas);
 
 	void render_camera(RID p_camera, RID p_scenario, Size2 p_viewport_size, RID p_shadow_atlas);
@@ -576,7 +544,7 @@ public:
 	bool free(RID p_rid);
 
 	VisualServerScene();
-	~VisualServerScene();
+	virtual ~VisualServerScene();
 };
 
 #endif // VISUALSERVERSCENE_H

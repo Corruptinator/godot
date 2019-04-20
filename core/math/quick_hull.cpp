@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,18 +27,18 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "quick_hull.h"
-#include "map.h"
+
+#include "core/map.h"
 
 uint32_t QuickHull::debug_stop_after = 0xFFFFFFFF;
 
 Error QuickHull::build(const Vector<Vector3> &p_points, Geometry::MeshData &r_mesh) {
 
-	static const real_t over_tolerance = 0.0001;
-
 	/* CREATE AABB VOLUME */
 
-	Rect3 aabb;
+	AABB aabb;
 	for (int i = 0; i < p_points.size(); i++) {
 
 		if (i == 0) {
@@ -60,10 +60,9 @@ Error QuickHull::build(const Vector<Vector3> &p_points, Geometry::MeshData &r_me
 
 		Vector3 sp = p_points[i].snapped(Vector3(0.0001, 0.0001, 0.0001));
 		if (valid_cache.has(sp)) {
-			valid_points[i] = false;
-			//print_line("INVALIDATED: "+itos(i));
+			valid_points.write[i] = false;
 		} else {
-			valid_points[i] = true;
+			valid_points.write[i] = true;
 			valid_cache.insert(sp);
 		}
 	}
@@ -73,10 +72,10 @@ Error QuickHull::build(const Vector<Vector3> &p_points, Geometry::MeshData &r_me
 	int longest_axis = aabb.get_longest_axis_index();
 
 	//first two vertices are the most distant
-	int simplex[4];
+	int simplex[4] = { 0 };
 
 	{
-		real_t max, min;
+		real_t max = 0, min = 0;
 
 		for (int i = 0; i < p_points.size(); i++) {
 
@@ -99,7 +98,7 @@ Error QuickHull::build(const Vector<Vector3> &p_points, Geometry::MeshData &r_me
 	//third vertex is one most further away from the line
 
 	{
-		real_t maxd;
+		real_t maxd = 0;
 		Vector3 rel12 = p_points[simplex[0]] - p_points[simplex[1]];
 
 		for (int i = 0; i < p_points.size(); i++) {
@@ -121,7 +120,7 @@ Error QuickHull::build(const Vector<Vector3> &p_points, Geometry::MeshData &r_me
 	//fourth vertex is the one  most further away from the plane
 
 	{
-		real_t maxd;
+		real_t maxd = 0;
 		Plane p(p_points[simplex[0]], p_points[simplex[1]], p_points[simplex[2]]);
 
 		for (int i = 0; i < p_points.size(); i++) {
@@ -178,6 +177,8 @@ Error QuickHull::build(const Vector<Vector3> &p_points, Geometry::MeshData &r_me
 
 		faces.push_back(f);
 	}
+
+	real_t over_tolerance = 3 * UNIT_EPSILON * (aabb.size.x + aabb.size.y + aabb.size.z);
 
 	/* COMPUTE AVAILABLE VERTICES */
 
@@ -389,14 +390,13 @@ Error QuickHull::build(const Vector<Vector3> &p_points, Geometry::MeshData &r_me
 
 		for (int i = 0; i < f.indices.size(); i++) {
 
-			uint32_t a = E->get().indices[i];
-			uint32_t b = E->get().indices[(i + 1) % f.indices.size()];
+			int a = E->get().indices[i];
+			int b = E->get().indices[(i + 1) % f.indices.size()];
 			Edge e(a, b);
 
 			Map<Edge, RetFaceConnect>::Element *F = ret_edges.find(e);
 
 			ERR_CONTINUE(!F);
-
 			List<Geometry::MeshData::Face>::Element *O = F->get().left == E ? F->get().right : F->get().left;
 			ERR_CONTINUE(O == E);
 			ERR_CONTINUE(O == NULL);
@@ -425,7 +425,6 @@ Error QuickHull::build(const Vector<Vector3> &p_points, Geometry::MeshData &r_me
 							Edge e2(idx, idxn);
 
 							Map<Edge, RetFaceConnect>::Element *F2 = ret_edges.find(e2);
-
 							ERR_CONTINUE(!F2);
 							//change faceconnect, point to this face instead
 							if (F2->get().left == O)
@@ -438,6 +437,15 @@ Error QuickHull::build(const Vector<Vector3> &p_points, Geometry::MeshData &r_me
 					}
 				}
 
+				// remove all edge connections to this face
+				for (Map<Edge, RetFaceConnect>::Element *G = ret_edges.front(); G; G = G->next()) {
+					if (G->get().left == O)
+						G->get().left = NULL;
+
+					if (G->get().right == O)
+						G->get().right = NULL;
+				}
+
 				ret_edges.erase(F); //remove the edge
 				ret_faces.erase(O); //remove the face
 			}
@@ -447,11 +455,10 @@ Error QuickHull::build(const Vector<Vector3> &p_points, Geometry::MeshData &r_me
 	//fill mesh
 	r_mesh.faces.clear();
 	r_mesh.faces.resize(ret_faces.size());
-	//print_line("FACECOUNT: "+itos(r_mesh.faces.size()));
 
 	int idx = 0;
 	for (List<Geometry::MeshData::Face>::Element *E = ret_faces.front(); E; E = E->next()) {
-		r_mesh.faces[idx++] = E->get();
+		r_mesh.faces.write[idx++] = E->get();
 	}
 	r_mesh.edges.resize(ret_edges.size());
 	idx = 0;
@@ -460,17 +467,10 @@ Error QuickHull::build(const Vector<Vector3> &p_points, Geometry::MeshData &r_me
 		Geometry::MeshData::Edge e;
 		e.a = E->key().vertices[0];
 		e.b = E->key().vertices[1];
-		r_mesh.edges[idx++] = e;
+		r_mesh.edges.write[idx++] = e;
 	}
 
 	r_mesh.vertices = p_points;
-
-	//r_mesh.optimize_vertices();
-	/*
-	print_line("FACES: "+itos(r_mesh.faces.size()));
-	print_line("EDGES: "+itos(r_mesh.edges.size()));
-	print_line("VERTICES: "+itos(r_mesh.vertices.size()));
-*/
 
 	return OK;
 }

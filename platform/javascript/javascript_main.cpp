@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,54 +27,45 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
-#include "emscripten.h"
-#include "io/resource_loader.h"
+
+#include "core/io/resource_loader.h"
 #include "main/main.h"
 #include "os_javascript.h"
 
-OS_JavaScript *os = NULL;
+#include <emscripten/emscripten.h>
 
-static void main_loop() {
+extern "C" EMSCRIPTEN_KEEPALIVE void main_after_fs_sync(char *p_idbfs_err) {
 
-	os->main_loop_iterate();
-}
-
-extern "C" void main_after_fs_sync() {
-
-	// Ease up compatibility
+	String idbfs_err = String::utf8(p_idbfs_err);
+	if (!idbfs_err.empty()) {
+		print_line("IndexedDB not available: " + idbfs_err);
+	}
+	OS_JavaScript *os = OS_JavaScript::get_singleton();
+	os->set_idb_available(idbfs_err.empty());
+	// Ease up compatibility.
 	ResourceLoader::set_abort_on_missing_resources(false);
 	Main::start();
-	os->main_loop_begin();
-	emscripten_set_main_loop(main_loop, 0, false);
+	os->run_async();
 }
 
 int main(int argc, char *argv[]) {
 
-	printf("let it go dude!\n");
-
-	// sync from persistent state into memory and then
-	// run the 'main_after_fs_sync' function
+	// Sync from persistent state into memory and then
+	// run the 'main_after_fs_sync' function.
 	/* clang-format off */
 	EM_ASM(
-		Module.noExitRuntime = true;
 		FS.mkdir('/userfs');
 		FS.mount(IDBFS, {}, '/userfs');
 		FS.syncfs(true, function(err) {
-			if (err) {
-				Module.setStatus('Failed to load persistent data\nPlease allow (third-party) cookies');
-				Module.printErr('Failed to populate IDB file system: ' + err.message);
-				Module.noExitRuntime = false;
-			} else {
-				Module.print('Successfully populated IDB file system');
-				ccall('main_after_fs_sync', null);
-			}
+			ccall('main_after_fs_sync', null, ['string'], [err ? err.message : ""])
 		});
 	);
 	/* clang-format on */
 
-	os = new OS_JavaScript(argv[0], NULL);
-	Error err = Main::setup(argv[0], argc - 1, &argv[1]);
+	new OS_JavaScript(argc, argv);
+	// TODO: Check error return value.
+	Main::setup(argv[0], argc - 1, &argv[1]);
 
 	return 0;
-	// continued async in main_after_fs_sync() from syncfs() callback
+	// Continued async in main_after_fs_sync() from the syncfs() callback.
 }

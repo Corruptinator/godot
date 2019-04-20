@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,8 +27,10 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "graph_node.h"
-#include "method_bind_ext.gen.inc"
+
+#include "core/method_bind_ext.gen.inc"
 
 bool GraphNode::_set(const StringName &p_name, const Variant &p_value) {
 
@@ -96,7 +98,7 @@ void GraphNode::_get_property_list(List<PropertyInfo> *p_list) const {
 
 	int idx = 0;
 	for (int i = 0; i < get_child_count(); i++) {
-		Control *c = get_child(i)->cast_to<Control>();
+		Control *c = Object::cast_to<Control>(get_child(i));
 		if (!c || c->is_set_as_toplevel())
 			continue;
 
@@ -122,7 +124,7 @@ void GraphNode::_resort() {
 	Size2 minsize;
 
 	for (int i = 0; i < get_child_count(); i++) {
-		Control *c = get_child(i)->cast_to<Control>();
+		Control *c = Object::cast_to<Control>(get_child(i));
 		if (!c)
 			continue;
 		if (c->is_set_as_toplevel())
@@ -144,7 +146,7 @@ void GraphNode::_resort() {
 
 	cache_y.clear();
 	for (int i = 0; i < get_child_count(); i++) {
-		Control *c = get_child(i)->cast_to<Control>();
+		Control *c = Object::cast_to<Control>(get_child(i));
 		if (!c)
 			continue;
 		if (c->is_set_as_toplevel())
@@ -162,7 +164,6 @@ void GraphNode::_resort() {
 		vofs += size.y;
 	}
 
-	_change_notify();
 	update();
 	connpos_dirty = true;
 }
@@ -190,94 +191,104 @@ bool GraphNode::has_point(const Point2 &p_point) const {
 
 void GraphNode::_notification(int p_what) {
 
-	if (p_what == NOTIFICATION_DRAW) {
+	switch (p_what) {
+		case NOTIFICATION_DRAW: {
 
-		Ref<StyleBox> sb;
+			Ref<StyleBox> sb;
 
-		if (comment) {
-			sb = get_stylebox(selected ? "commentfocus" : "comment");
+			if (comment) {
+				sb = get_stylebox(selected ? "commentfocus" : "comment");
 
-		} else {
+			} else {
 
-			sb = get_stylebox(selected ? "selectedframe" : "frame");
-		}
-
-		//sb=sb->duplicate();
-		//sb->call("set_modulate",modulate);
-		Ref<Texture> port = get_icon("port");
-		Ref<Texture> close = get_icon("close");
-		Ref<Texture> resizer = get_icon("resizer");
-		int close_offset = get_constant("close_offset");
-		Ref<Font> title_font = get_font("title_font");
-		int title_offset = get_constant("title_offset");
-		Color title_color = get_color("title_color");
-		Point2i icofs = -port->get_size() * 0.5;
-		int edgeofs = get_constant("port_offset");
-		icofs.y += sb->get_margin(MARGIN_TOP);
-
-		draw_style_box(sb, Rect2(Point2(), get_size()));
-
-		switch (overlay) {
-			case OVERLAY_DISABLED: {
-
-			} break;
-			case OVERLAY_BREAKPOINT: {
-
-				draw_style_box(get_stylebox("breakpoint"), Rect2(Point2(), get_size()));
-			} break;
-			case OVERLAY_POSITION: {
-				draw_style_box(get_stylebox("position"), Rect2(Point2(), get_size()));
-
-			} break;
-		}
-
-		int w = get_size().width - sb->get_minimum_size().x;
-
-		if (show_close)
-			w -= close->get_width();
-
-		draw_string(title_font, Point2(sb->get_margin(MARGIN_LEFT), -title_font->get_height() + title_font->get_ascent() + title_offset), title, title_color, w);
-		if (show_close) {
-			Vector2 cpos = Point2(w + sb->get_margin(MARGIN_LEFT), -close->get_height() + close_offset);
-			draw_texture(close, cpos);
-			close_rect.position = cpos;
-			close_rect.size = close->get_size();
-		} else {
-			close_rect = Rect2();
-		}
-
-		for (Map<int, Slot>::Element *E = slot_info.front(); E; E = E->next()) {
-
-			if (E->key() < 0 || E->key() >= cache_y.size())
-				continue;
-			if (!slot_info.has(E->key()))
-				continue;
-			const Slot &s = slot_info[E->key()];
-			//left
-			if (s.enable_left) {
-				Ref<Texture> p = port;
-				if (s.custom_slot_left.is_valid()) {
-					p = s.custom_slot_left;
-				}
-				p->draw(get_canvas_item(), icofs + Point2(edgeofs, cache_y[E->key()]), s.color_left);
+				sb = get_stylebox(selected ? "selectedframe" : "frame");
 			}
-			if (s.enable_right) {
-				Ref<Texture> p = port;
-				if (s.custom_slot_right.is_valid()) {
-					p = s.custom_slot_right;
-				}
-				p->draw(get_canvas_item(), icofs + Point2(get_size().x - edgeofs, cache_y[E->key()]), s.color_right);
+
+			//sb=sb->duplicate();
+			//sb->call("set_modulate",modulate);
+			Ref<Texture> port = get_icon("port");
+			Ref<Texture> close = get_icon("close");
+			Ref<Texture> resizer = get_icon("resizer");
+			int close_offset = get_constant("close_offset");
+			int close_h_offset = get_constant("close_h_offset");
+			Color close_color = get_color("close_color");
+			Ref<Font> title_font = get_font("title_font");
+			int title_offset = get_constant("title_offset");
+			int title_h_offset = get_constant("title_h_offset");
+			Color title_color = get_color("title_color");
+			Point2i icofs = -port->get_size() * 0.5;
+			int edgeofs = get_constant("port_offset");
+			icofs.y += sb->get_margin(MARGIN_TOP);
+
+			draw_style_box(sb, Rect2(Point2(), get_size()));
+
+			switch (overlay) {
+				case OVERLAY_DISABLED: {
+
+				} break;
+				case OVERLAY_BREAKPOINT: {
+
+					draw_style_box(get_stylebox("breakpoint"), Rect2(Point2(), get_size()));
+				} break;
+				case OVERLAY_POSITION: {
+					draw_style_box(get_stylebox("position"), Rect2(Point2(), get_size()));
+
+				} break;
 			}
-		}
 
-		if (resizeable) {
-			draw_texture(resizer, get_size() - resizer->get_size());
-		}
-	}
+			int w = get_size().width - sb->get_minimum_size().x;
 
-	if (p_what == NOTIFICATION_SORT_CHILDREN) {
+			if (show_close)
+				w -= close->get_width();
 
-		_resort();
+			draw_string(title_font, Point2(sb->get_margin(MARGIN_LEFT) + title_h_offset, -title_font->get_height() + title_font->get_ascent() + title_offset), title, title_color, w);
+			if (show_close) {
+				Vector2 cpos = Point2(w + sb->get_margin(MARGIN_LEFT) + close_h_offset, -close->get_height() + close_offset);
+				draw_texture(close, cpos, close_color);
+				close_rect.position = cpos;
+				close_rect.size = close->get_size();
+			} else {
+				close_rect = Rect2();
+			}
+
+			for (Map<int, Slot>::Element *E = slot_info.front(); E; E = E->next()) {
+
+				if (E->key() < 0 || E->key() >= cache_y.size())
+					continue;
+				if (!slot_info.has(E->key()))
+					continue;
+				const Slot &s = slot_info[E->key()];
+				//left
+				if (s.enable_left) {
+					Ref<Texture> p = port;
+					if (s.custom_slot_left.is_valid()) {
+						p = s.custom_slot_left;
+					}
+					p->draw(get_canvas_item(), icofs + Point2(edgeofs, cache_y[E->key()]), s.color_left);
+				}
+				if (s.enable_right) {
+					Ref<Texture> p = port;
+					if (s.custom_slot_right.is_valid()) {
+						p = s.custom_slot_right;
+					}
+					p->draw(get_canvas_item(), icofs + Point2(get_size().x - edgeofs, cache_y[E->key()]), s.color_right);
+				}
+			}
+
+			if (resizable) {
+				draw_texture(resizer, get_size() - resizer->get_size());
+			}
+		} break;
+
+		case NOTIFICATION_SORT_CHILDREN: {
+
+			_resort();
+		} break;
+
+		case NOTIFICATION_THEME_CHANGED: {
+
+			minimum_size_changed();
+		} break;
 	}
 }
 
@@ -375,7 +386,7 @@ Size2 GraphNode::get_minimum_size() const {
 
 	for (int i = 0; i < get_child_count(); i++) {
 
-		Control *c = get_child(i)->cast_to<Control>();
+		Control *c = Object::cast_to<Control>(get_child(i));
 		if (!c)
 			continue;
 		if (c->is_set_as_toplevel())
@@ -397,9 +408,12 @@ Size2 GraphNode::get_minimum_size() const {
 
 void GraphNode::set_title(const String &p_title) {
 
+	if (title == p_title)
+		return;
 	title = p_title;
-	minimum_size_changed();
 	update();
+	_change_notify("title");
+	minimum_size_changed();
 }
 
 String GraphNode::get_title() const {
@@ -462,7 +476,7 @@ void GraphNode::_connpos_update() {
 	int idx = 0;
 
 	for (int i = 0; i < get_child_count(); i++) {
-		Control *c = get_child(i)->cast_to<Control>();
+		Control *c = Object::cast_to<Control>(get_child(i));
 		if (!c)
 			continue;
 		if (c->is_set_as_toplevel())
@@ -515,7 +529,7 @@ int GraphNode::get_connection_output_count() {
 	return conn_output_cache.size();
 }
 
-Vector2 GraphNode::get_connection_input_pos(int p_idx) {
+Vector2 GraphNode::get_connection_input_position(int p_idx) {
 
 	if (connpos_dirty)
 		_connpos_update();
@@ -545,7 +559,7 @@ Color GraphNode::get_connection_input_color(int p_idx) {
 	return conn_input_cache[p_idx].color;
 }
 
-Vector2 GraphNode::get_connection_output_pos(int p_idx) {
+Vector2 GraphNode::get_connection_output_position(int p_idx) {
 
 	if (connpos_dirty)
 		_connpos_update();
@@ -594,7 +608,7 @@ void GraphNode::_gui_input(const Ref<InputEvent> &p_ev) {
 
 			Ref<Texture> resizer = get_icon("resizer");
 
-			if (resizeable && mpos.x > get_size().x - resizer->get_width() && mpos.y > get_size().y - resizer->get_height()) {
+			if (resizable && mpos.x > get_size().x - resizer->get_width() && mpos.y > get_size().y - resizer->get_height()) {
 
 				resizing = true;
 				resizing_from = mpos;
@@ -645,15 +659,15 @@ bool GraphNode::is_comment() const {
 	return comment;
 }
 
-void GraphNode::set_resizeable(bool p_enable) {
+void GraphNode::set_resizable(bool p_enable) {
 
-	resizeable = p_enable;
+	resizable = p_enable;
 	update();
 }
 
-bool GraphNode::is_resizeable() const {
+bool GraphNode::is_resizable() const {
 
-	return resizeable;
+	return resizable;
 }
 
 void GraphNode::_bind_methods() {
@@ -678,8 +692,8 @@ void GraphNode::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_comment", "comment"), &GraphNode::set_comment);
 	ClassDB::bind_method(D_METHOD("is_comment"), &GraphNode::is_comment);
 
-	ClassDB::bind_method(D_METHOD("set_resizeable", "resizeable"), &GraphNode::set_resizeable);
-	ClassDB::bind_method(D_METHOD("is_resizeable"), &GraphNode::is_resizeable);
+	ClassDB::bind_method(D_METHOD("set_resizable", "resizable"), &GraphNode::set_resizable);
+	ClassDB::bind_method(D_METHOD("is_resizable"), &GraphNode::is_resizable);
 
 	ClassDB::bind_method(D_METHOD("set_selected", "selected"), &GraphNode::set_selected);
 	ClassDB::bind_method(D_METHOD("is_selected"), &GraphNode::is_selected);
@@ -687,10 +701,10 @@ void GraphNode::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_connection_output_count"), &GraphNode::get_connection_output_count);
 	ClassDB::bind_method(D_METHOD("get_connection_input_count"), &GraphNode::get_connection_input_count);
 
-	ClassDB::bind_method(D_METHOD("get_connection_output_pos", "idx"), &GraphNode::get_connection_output_pos);
+	ClassDB::bind_method(D_METHOD("get_connection_output_position", "idx"), &GraphNode::get_connection_output_position);
 	ClassDB::bind_method(D_METHOD("get_connection_output_type", "idx"), &GraphNode::get_connection_output_type);
 	ClassDB::bind_method(D_METHOD("get_connection_output_color", "idx"), &GraphNode::get_connection_output_color);
-	ClassDB::bind_method(D_METHOD("get_connection_input_pos", "idx"), &GraphNode::get_connection_input_pos);
+	ClassDB::bind_method(D_METHOD("get_connection_input_position", "idx"), &GraphNode::get_connection_input_position);
 	ClassDB::bind_method(D_METHOD("get_connection_input_type", "idx"), &GraphNode::get_connection_input_type);
 	ClassDB::bind_method(D_METHOD("get_connection_input_color", "idx"), &GraphNode::get_connection_input_color);
 
@@ -701,8 +715,12 @@ void GraphNode::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_overlay"), &GraphNode::get_overlay);
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "title"), "set_title", "get_title");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "offset"), "set_offset", "get_offset");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "show_close"), "set_show_close_button", "is_close_button_visible");
-	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "resizeable"), "set_resizeable", "is_resizeable");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "resizable"), "set_resizable", "is_resizable");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "selected"), "set_selected", "is_selected");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "comment"), "set_comment", "is_comment");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "overlay", PROPERTY_HINT_ENUM, "Disabled,Breakpoint,Position"), "set_overlay", "get_overlay");
 
 	ADD_SIGNAL(MethodInfo("offset_changed"));
 	ADD_SIGNAL(MethodInfo("dragged", PropertyInfo(Variant::VECTOR2, "from"), PropertyInfo(Variant::VECTOR2, "to")));
@@ -710,9 +728,9 @@ void GraphNode::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("close_request"));
 	ADD_SIGNAL(MethodInfo("resize_request", PropertyInfo(Variant::VECTOR2, "new_minsize")));
 
-	BIND_CONSTANT(OVERLAY_DISABLED);
-	BIND_CONSTANT(OVERLAY_BREAKPOINT);
-	BIND_CONSTANT(OVERLAY_POSITION);
+	BIND_ENUM_CONSTANT(OVERLAY_DISABLED);
+	BIND_ENUM_CONSTANT(OVERLAY_BREAKPOINT);
+	BIND_ENUM_CONSTANT(OVERLAY_POSITION);
 }
 
 GraphNode::GraphNode() {
@@ -722,7 +740,7 @@ GraphNode::GraphNode() {
 	connpos_dirty = true;
 	set_mouse_filter(MOUSE_FILTER_STOP);
 	comment = false;
-	resizeable = false;
+	resizable = false;
 	resizing = false;
 	selected = false;
 }

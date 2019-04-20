@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -28,13 +28,14 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-#ifndef PLATFORM_ANDROID_POWER_ANDROID_H_
-#define PLATFORM_ANDROID_POWER_ANDROID_H_
+#ifndef POWER_ANDROID_H
+#define POWER_ANDROID_H
 
-#include "os/power.h"
+#include "core/os/os.h"
+
 #include <android/native_window_jni.h>
 
-class power_android {
+class PowerAndroid {
 
 	struct LocalReferenceHolder {
 		JNIEnv *m_env;
@@ -57,7 +58,7 @@ private:
 
 	int nsecs_left;
 	int percent_left;
-	PowerState power_state;
+	OS::PowerState power_state;
 
 	bool GetPowerInfo_Android();
 	bool UpdatePowerInfo();
@@ -65,15 +66,15 @@ private:
 public:
 	static int s_active;
 
-	power_android();
-	virtual ~power_android();
+	PowerAndroid();
+	virtual ~PowerAndroid();
 	static bool LocalReferenceHolder_Init(struct LocalReferenceHolder *refholder, JNIEnv *env);
 	static struct LocalReferenceHolder LocalReferenceHolder_Setup(const char *func);
 	static void LocalReferenceHolder_Cleanup(struct LocalReferenceHolder *refholder);
 
-	PowerState get_power_state();
+	OS::PowerState get_power_state();
 	int get_power_seconds_left();
 	int get_power_percent_left();
 };
 
-#endif /* PLATFORM_ANDROID_POWER_ANDROID_H_ */
+#endif // POWER_ANDROID_H

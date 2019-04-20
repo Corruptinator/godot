@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,11 +27,64 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "light_occluder_2d.h"
+
+#include "core/engine.h"
+
+#define LINE_GRAB_WIDTH 8
+Rect2 OccluderPolygon2D::_edit_get_rect() const {
+
+	if (rect_cache_dirty) {
+		if (closed) {
+			PoolVector<Vector2>::Read r = polygon.read();
+			item_rect = Rect2();
+			for (int i = 0; i < polygon.size(); i++) {
+				Vector2 pos = r[i];
+				if (i == 0)
+					item_rect.position = pos;
+				else
+					item_rect.expand_to(pos);
+			}
+			rect_cache_dirty = false;
+		} else {
+			if (polygon.size() == 0) {
+				item_rect = Rect2();
+			} else {
+				Vector2 d = Vector2(LINE_GRAB_WIDTH, LINE_GRAB_WIDTH);
+				item_rect = Rect2(polygon[0] - d, 2 * d);
+				for (int i = 1; i < polygon.size(); i++) {
+					item_rect.expand_to(polygon[i] - d);
+					item_rect.expand_to(polygon[i] + d);
+				}
+			}
+		}
+	}
+
+	return item_rect;
+}
+
+bool OccluderPolygon2D::_edit_is_selected_on_click(const Point2 &p_point, double p_tolerance) const {
+
+	if (closed) {
+		return Geometry::is_point_in_polygon(p_point, Variant(polygon));
+	} else {
+		const real_t d = LINE_GRAB_WIDTH / 2 + p_tolerance;
+		PoolVector<Vector2>::Read points = polygon.read();
+		for (int i = 0; i < polygon.size() - 1; i++) {
+			Vector2 p = Geometry::get_closest_point_to_segment_2d(p_point, &points[i]);
+			if (p.distance_to(p_point) <= d)
+				return true;
+		}
+
+		return false;
+	}
+}
 
 void OccluderPolygon2D::set_polygon(const PoolVector<Vector2> &p_polygon) {
 
 	polygon = p_polygon;
+	rect_cache_dirty = true;
 	VS::get_singleton()->canvas_occluder_polygon_set_shape(occ_polygon, p_polygon, closed);
 	emit_changed();
 }
@@ -87,9 +140,9 @@ void OccluderPolygon2D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "cull_mode", PROPERTY_HINT_ENUM, "Disabled,ClockWise,CounterClockWise"), "set_cull_mode", "get_cull_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::POOL_VECTOR2_ARRAY, "polygon"), "set_polygon", "get_polygon");
 
-	BIND_CONSTANT(CULL_DISABLED);
-	BIND_CONSTANT(CULL_CLOCKWISE);
-	BIND_CONSTANT(CULL_COUNTER_CLOCKWISE);
+	BIND_ENUM_CONSTANT(CULL_DISABLED);
+	BIND_ENUM_CONSTANT(CULL_CLOCKWISE);
+	BIND_ENUM_CONSTANT(CULL_COUNTER_CLOCKWISE);
 }
 
 OccluderPolygon2D::OccluderPolygon2D() {
@@ -97,6 +150,7 @@ OccluderPolygon2D::OccluderPolygon2D() {
 	occ_polygon = VS::get_singleton()->canvas_occluder_polygon_create();
 	closed = true;
 	cull = CULL_DISABLED;
+	rect_cache_dirty = true;
 }
 
 OccluderPolygon2D::~OccluderPolygon2D() {
@@ -104,12 +158,12 @@ OccluderPolygon2D::~OccluderPolygon2D() {
 	VS::get_singleton()->free(occ_polygon);
 }
 
-#ifdef DEBUG_ENABLED
 void LightOccluder2D::_poly_changed() {
 
+#ifdef DEBUG_ENABLED
 	update();
-}
 #endif
+}
 
 void LightOccluder2D::_notification(int p_what) {
 
@@ -130,7 +184,7 @@ void LightOccluder2D::_notification(int p_what) {
 
 	if (p_what == NOTIFICATION_DRAW) {
 
-		if (get_tree()->is_editor_hint()) {
+		if (Engine::get_singleton()->is_editor_hint()) {
 
 			if (occluder_polygon.is_valid()) {
 
@@ -159,6 +213,16 @@ void LightOccluder2D::_notification(int p_what) {
 
 		VS::get_singleton()->canvas_light_occluder_attach_to_canvas(occluder, RID());
 	}
+}
+
+Rect2 LightOccluder2D::_edit_get_rect() const {
+
+	return occluder_polygon.is_valid() ? occluder_polygon->_edit_get_rect() : Rect2();
+}
+
+bool LightOccluder2D::_edit_is_selected_on_click(const Point2 &p_point, double p_tolerance) const {
+
+	return occluder_polygon.is_valid() ? occluder_polygon->_edit_is_selected_on_click(p_point, p_tolerance) : false;
 }
 
 void LightOccluder2D::set_occluder_polygon(const Ref<OccluderPolygon2D> &p_polygon) {
@@ -218,9 +282,7 @@ void LightOccluder2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_occluder_light_mask", "mask"), &LightOccluder2D::set_occluder_light_mask);
 	ClassDB::bind_method(D_METHOD("get_occluder_light_mask"), &LightOccluder2D::get_occluder_light_mask);
 
-#ifdef DEBUG_ENABLED
 	ClassDB::bind_method("_poly_changed", &LightOccluder2D::_poly_changed);
-#endif
 
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "occluder", PROPERTY_HINT_RESOURCE_TYPE, "OccluderPolygon2D"), "set_occluder_polygon", "get_occluder_polygon");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "light_mask", PROPERTY_HINT_LAYERS_2D_RENDER), "set_occluder_light_mask", "get_occluder_light_mask");

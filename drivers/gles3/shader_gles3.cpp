@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,9 +27,10 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "shader_gles3.h"
 
-#include "print_string.h"
+#include "core/print_string.h"
 
 //#define DEBUG_OPENGL
 
@@ -121,21 +122,17 @@ bool ShaderGLES3::bind() {
 
 	ERR_FAIL_COND_V(!version, false);
 
+	if (!version->ok) { //broken, unable to bind (do not throw error, you saw it before already when it failed compilation).
+		glUseProgram(0);
+		return false;
+	}
+
 	glUseProgram(version->id);
 
 	DEBUG_TEST_ERROR("Use Program");
 
 	active = this;
 	uniforms_dirty = true;
-	/*
- *	why on earth is this code here?
-	for (int i=0;i<texunit_pair_count;i++) {
-
-		glUniform1i(texunit_pairs[i].location, texunit_pairs[i].index);
-		DEBUG_TEST_ERROR("Uniform 1 i");
-	}
-
-*/
 	return true;
 }
 
@@ -213,20 +210,15 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version() {
 	strings.push_back("#version 300 es\n");
 #endif
 
-	int define_line_ofs = 1;
-
 	for (int i = 0; i < custom_defines.size(); i++) {
 
 		strings.push_back(custom_defines[i].get_data());
-		define_line_ofs++;
 	}
 
 	for (int j = 0; j < conditional_count; j++) {
 
 		bool enable = ((1 << j) & conditional_version.version);
 		strings.push_back(enable ? conditional_defines[j] : "");
-		if (enable)
-			define_line_ofs++;
 
 		if (enable) {
 			DEBUG_PRINT(conditional_defines[j]);
@@ -239,8 +231,6 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version() {
 	CharString code_globals;
 	CharString material_string;
 
-	//print_line("code version? "+itos(conditional_version.code_version));
-
 	CustomCode *cc = NULL;
 
 	if (conditional_version.code_version > 0) {
@@ -249,7 +239,6 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version() {
 		ERR_FAIL_COND_V(!custom_code_map.has(conditional_version.code_version), NULL);
 		cc = &custom_code_map[conditional_version.code_version];
 		v.code_version = cc->version;
-		define_line_ofs += 2;
 	}
 
 	/* CREATE PROGRAM */
@@ -277,21 +266,6 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version() {
 	strings.push_back("precision highp sampler2D;\n");
 	strings.push_back("precision highp samplerCube;\n");
 	strings.push_back("precision highp sampler2DArray;\n");
-#endif
-
-#if 0
-	if (cc) {
-
-		String _code_string = "#define VERTEX_SHADER_CODE "+cc->vertex+"\n";
-		String _code_globals = "#define VERTEX_SHADER_GLOBALS "+cc->vertex_globals+"\n";
-
-		code_string=_code_string.ascii();
-		code_globals=_code_globals.ascii();
-		DEBUG_PRINT( code_globals.get_data() );
-		DEBUG_PRINT( code_string.get_data() );
-		strings.push_back(code_globals);
-		strings.push_back(code_string);
-	}
 #endif
 
 	strings.push_back(vertex_code0.get_data());
@@ -343,7 +317,7 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version() {
 			glDeleteProgram(v.id);
 			v.id = 0;
 
-			ERR_PRINT("NO LOG, WTF");
+			ERR_PRINT("Vertex shader compilation failed with empty log");
 		} else {
 
 			if (iloglen == 0) {
@@ -380,21 +354,6 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version() {
 	strings.push_back("precision highp sampler2D;\n");
 	strings.push_back("precision highp samplerCube;\n");
 	strings.push_back("precision highp sampler2DArray;\n");
-#endif
-
-#if 0
-	if (cc) {
-
-		String _code_string = "#define FRAGMENT_SHADER_CODE "+cc->fragment+"\n";
-		String _code_globals = "#define FRAGMENT_SHADER_GLOBALS "+cc->fragment_globals+"\n";
-
-		code_string=_code_string.ascii();
-		code_globals=_code_globals.ascii();
-		DEBUG_PRINT( code_globals.get_data() );
-		DEBUG_PRINT( code_string.get_data() );
-		strings.push_back(code_globals);
-		strings.push_back(code_string);
-	}
 #endif
 
 	strings.push_back(fragment_code0.get_data());
@@ -451,7 +410,7 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version() {
 			glDeleteShader(v.vert_id);
 			glDeleteProgram(v.id);
 			v.id = 0;
-			ERR_PRINT("NO LOG, WTF");
+			ERR_PRINT("Fragment shader compilation failed with empty log");
 		} else {
 
 			if (iloglen == 0) {
@@ -495,7 +454,6 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version() {
 
 			if (feedbacks[i].conditional == -1 || (1 << feedbacks[i].conditional) & conditional_version.version) {
 				//conditional for this feedback is enabled
-				print_line("tf varying: " + itos(feedback.size()) + " " + String(feedbacks[i].name));
 				feedback.push_back(feedbacks[i].name);
 			}
 		}
@@ -584,7 +542,7 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version() {
 		v.texture_uniform_locations.resize(cc->texture_uniforms.size());
 		for (int i = 0; i < cc->texture_uniforms.size(); i++) {
 
-			v.texture_uniform_locations[i] = glGetUniformLocation(v.id, String(cc->texture_uniforms[i]).ascii().get_data());
+			v.texture_uniform_locations.write[i] = glGetUniformLocation(v.id, String(cc->texture_uniforms[i]).ascii().get_data());
 			glUniform1i(v.texture_uniform_locations[i], i + base_material_tex_index);
 		}
 	}
@@ -592,6 +550,9 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version() {
 	glUseProgram(0);
 
 	v.ok = true;
+	if (cc) {
+		cc->versions.insert(conditional_version.version);
+	}
 
 	return &v;
 }
@@ -624,7 +585,7 @@ void ShaderGLES3::setup(const char **p_conditional_defines, int p_conditional_co
 	feedbacks = p_feedback;
 	feedback_count = p_feedback_count;
 
-	//split vertex and shader code (thank you, retarded shader compiler programmers from you know what company).
+	//split vertex and shader code (thank you, shader compiler programmers from you know what company).
 	{
 		String globals_tag = "\nVERTEX_SHADER_GLOBALS";
 		String material_tag = "\nMATERIAL_UNIFORMS";
@@ -773,16 +734,27 @@ void ShaderGLES3::set_custom_shader(uint32_t p_code_id) {
 
 void ShaderGLES3::free_custom_shader(uint32_t p_code_id) {
 
-	/*  if (! custom_code_map.has( p_code_id )) {
-        print_line("no code id "+itos(p_code_id));
-    } else {
-        print_line("freed code id "+itos(p_code_id));
-
-    }*/
-
 	ERR_FAIL_COND(!custom_code_map.has(p_code_id));
-	if (conditional_version.code_version == p_code_id)
-		conditional_version.code_version = 0; //bye
+	if (conditional_version.code_version == p_code_id) {
+		conditional_version.code_version = 0; //do not keep using a version that is going away
+		unbind();
+	}
+
+	VersionKey key;
+	key.code_version = p_code_id;
+	for (Set<uint32_t>::Element *E = custom_code_map[p_code_id].versions.front(); E; E = E->next()) {
+		key.version = E->get();
+		ERR_CONTINUE(!version_map.has(key));
+		Version &v = version_map[key];
+
+		glDeleteShader(v.vert_id);
+		glDeleteShader(v.frag_id);
+		glDeleteProgram(v.id);
+		memdelete_arr(v.uniform_location);
+		v.id = 0;
+
+		version_map.erase(key);
+	}
 
 	custom_code_map.erase(p_code_id);
 }

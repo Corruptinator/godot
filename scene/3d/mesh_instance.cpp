@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,14 +27,16 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "mesh_instance.h"
 
 #include "collision_shape.h"
-#include "core_string_names.h"
+#include "core/core_string_names.h"
 #include "physics_body.h"
 #include "scene/resources/material.h"
 #include "scene/scene_string_names.h"
 #include "skeleton.h"
+
 bool MeshInstance::_set(const StringName &p_name, const Variant &p_value) {
 
 	//this is not _too_ bad performance wise, really. it only arrives here if the property was not set anywhere else.
@@ -94,7 +96,7 @@ void MeshInstance::_get_property_list(List<PropertyInfo> *p_list) const {
 	ls.sort();
 
 	for (List<String>::Element *E = ls.front(); E; E = E->next()) {
-		p_list->push_back(PropertyInfo(Variant::REAL, E->get(), PROPERTY_HINT_RANGE, "0,1,0.01"));
+		p_list->push_back(PropertyInfo(Variant::REAL, E->get(), PROPERTY_HINT_RANGE, "0,1,0.00001"));
 	}
 
 	if (mesh.is_valid()) {
@@ -136,6 +138,8 @@ void MeshInstance::set_mesh(const Ref<Mesh> &p_mesh) {
 		set_base(RID());
 	}
 
+	update_gizmo();
+
 	_change_notify();
 }
 Ref<Mesh> MeshInstance::get_mesh() const {
@@ -148,7 +152,7 @@ void MeshInstance::_resolve_skeleton_path() {
 	if (skeleton_path.is_empty())
 		return;
 
-	Skeleton *skeleton = get_node(skeleton_path) ? get_node(skeleton_path)->cast_to<Skeleton>() : NULL;
+	Skeleton *skeleton = Object::cast_to<Skeleton>(get_node(skeleton_path));
 	if (skeleton)
 		VisualServer::get_singleton()->instance_attach_skeleton(get_instance(), skeleton->get_skeleton());
 }
@@ -165,12 +169,12 @@ NodePath MeshInstance::get_skeleton_path() {
 	return skeleton_path;
 }
 
-Rect3 MeshInstance::get_aabb() const {
+AABB MeshInstance::get_aabb() const {
 
 	if (!mesh.is_null())
 		return mesh->get_aabb();
 
-	return Rect3();
+	return AABB();
 }
 
 PoolVector<Face3> MeshInstance::get_faces(uint32_t p_usage_flags) const {
@@ -202,13 +206,13 @@ Node *MeshInstance::create_trimesh_collision_node() {
 
 void MeshInstance::create_trimesh_collision() {
 
-	StaticBody *static_body = create_trimesh_collision_node()->cast_to<StaticBody>();
+	StaticBody *static_body = Object::cast_to<StaticBody>(create_trimesh_collision_node());
 	ERR_FAIL_COND(!static_body);
 	static_body->set_name(String(get_name()) + "_col");
 
 	add_child(static_body);
 	if (get_owner()) {
-		CollisionShape *cshape = static_body->get_child(0)->cast_to<CollisionShape>();
+		CollisionShape *cshape = Object::cast_to<CollisionShape>(static_body->get_child(0));
 		static_body->set_owner(get_owner());
 		cshape->set_owner(get_owner());
 	}
@@ -232,13 +236,13 @@ Node *MeshInstance::create_convex_collision_node() {
 
 void MeshInstance::create_convex_collision() {
 
-	StaticBody *static_body = create_convex_collision_node()->cast_to<StaticBody>();
+	StaticBody *static_body = Object::cast_to<StaticBody>(create_convex_collision_node());
 	ERR_FAIL_COND(!static_body);
 	static_body->set_name(String(get_name()) + "_col");
 
 	add_child(static_body);
 	if (get_owner()) {
-		CollisionShape *cshape = static_body->get_child(0)->cast_to<CollisionShape>();
+		CollisionShape *cshape = Object::cast_to<CollisionShape>(static_body->get_child(0));
 		static_body->set_owner(get_owner());
 		cshape->set_owner(get_owner());
 	}
@@ -251,11 +255,16 @@ void MeshInstance::_notification(int p_what) {
 	}
 }
 
+int MeshInstance::get_surface_material_count() const {
+
+	return materials.size();
+}
+
 void MeshInstance::set_surface_material(int p_surface, const Ref<Material> &p_material) {
 
 	ERR_FAIL_INDEX(p_surface, materials.size());
 
-	materials[p_surface] = p_material;
+	materials.write[p_surface] = p_material;
 
 	if (materials[p_surface].is_valid())
 		VS::get_singleton()->instance_set_surface_material(get_instance(), p_surface, materials[p_surface]->get_rid());
@@ -357,6 +366,7 @@ void MeshInstance::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_skeleton_path", "skeleton_path"), &MeshInstance::set_skeleton_path);
 	ClassDB::bind_method(D_METHOD("get_skeleton_path"), &MeshInstance::get_skeleton_path);
 
+	ClassDB::bind_method(D_METHOD("get_surface_material_count"), &MeshInstance::get_surface_material_count);
 	ClassDB::bind_method(D_METHOD("set_surface_material", "surface", "material"), &MeshInstance::set_surface_material);
 	ClassDB::bind_method(D_METHOD("get_surface_material", "surface"), &MeshInstance::get_surface_material);
 
@@ -370,7 +380,7 @@ void MeshInstance::_bind_methods() {
 	ClassDB::set_method_flags("MeshInstance", "create_debug_tangents", METHOD_FLAGS_DEFAULT | METHOD_FLAG_EDITOR);
 
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "mesh", PROPERTY_HINT_RESOURCE_TYPE, "Mesh"), "set_mesh", "get_mesh");
-	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "skeleton"), "set_skeleton_path", "get_skeleton_path");
+	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "skeleton", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Skeleton"), "set_skeleton_path", "get_skeleton_path");
 }
 
 MeshInstance::MeshInstance() {

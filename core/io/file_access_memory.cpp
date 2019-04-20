@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,12 +27,13 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "file_access_memory.h"
 
-#include "map.h"
-#include "os/copymem.h"
-#include "os/dir_access.h"
-#include "project_settings.h"
+#include "core/map.h"
+#include "core/os/copymem.h"
+#include "core/os/dir_access.h"
+#include "core/project_settings.h"
 
 static Map<String, Vector<uint8_t> > *files = NULL;
 
@@ -91,7 +92,7 @@ Error FileAccessMemory::_open(const String &p_path, int p_mode_flags) {
 	Map<String, Vector<uint8_t> >::Element *E = files->find(name);
 	ERR_FAIL_COND_V(!E, ERR_FILE_NOT_FOUND);
 
-	data = &(E->get()[0]);
+	data = E->get().ptrw();
 	length = E->get().size();
 	pos = 0;
 
@@ -120,7 +121,7 @@ void FileAccessMemory::seek_end(int64_t p_position) {
 	pos = length + p_position;
 }
 
-size_t FileAccessMemory::get_pos() const {
+size_t FileAccessMemory::get_position() const {
 
 	ERR_FAIL_COND_V(!data, 0);
 	return pos;
@@ -168,6 +169,10 @@ int FileAccessMemory::get_buffer(uint8_t *p_dst, int p_length) const {
 Error FileAccessMemory::get_error() const {
 
 	return pos >= length ? ERR_FILE_EOF : OK;
+}
+
+void FileAccessMemory::flush() {
+	ERR_FAIL_COND(!data);
 }
 
 void FileAccessMemory::store_8(uint8_t p_byte) {

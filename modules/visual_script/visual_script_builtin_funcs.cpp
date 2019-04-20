@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,15 +27,16 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "visual_script_builtin_funcs.h"
 
-#include "class_db.h"
-#include "func_ref.h"
-#include "io/marshalls.h"
-#include "math_funcs.h"
-#include "os/os.h"
-#include "reference.h"
-#include "variant_parser.h"
+#include "core/class_db.h"
+#include "core/func_ref.h"
+#include "core/io/marshalls.h"
+#include "core/math/math_funcs.h"
+#include "core/os/os.h"
+#include "core/reference.h"
+#include "core/variant_parser.h"
 
 const char *VisualScriptBuiltinFunc::func_name[VisualScriptBuiltinFunc::FUNC_MAX] = {
 	"sin",
@@ -65,6 +66,8 @@ const char *VisualScriptBuiltinFunc::func_name[VisualScriptBuiltinFunc::FUNC_MAX
 	"decimals",
 	"stepify",
 	"lerp",
+	"inverse_lerp",
+	"range_lerp",
 	"dectime",
 	"randomize",
 	"randi",
@@ -76,6 +79,10 @@ const char *VisualScriptBuiltinFunc::func_name[VisualScriptBuiltinFunc::FUNC_MAX
 	"rad2deg",
 	"linear2db",
 	"db2linear",
+	"polar2cartesian",
+	"cartesian2polar",
+	"wrapi",
+	"wrapf",
 	"max",
 	"min",
 	"clamp",
@@ -95,6 +102,7 @@ const char *VisualScriptBuiltinFunc::func_name[VisualScriptBuiltinFunc::FUNC_MAX
 	"var2bytes",
 	"bytes2var",
 	"color_named",
+	"smoothstep",
 };
 
 VisualScriptBuiltinFunc::BuiltinFunc VisualScriptBuiltinFunc::find_function(const String &p_string) {
@@ -176,10 +184,10 @@ int VisualScriptBuiltinFunc::get_func_argument_count(BuiltinFunc p_func) {
 		case TEXT_PRINTRAW:
 		case VAR_TO_STR:
 		case STR_TO_VAR:
-		case VAR_TO_BYTES:
-		case BYTES_TO_VAR:
 		case TYPE_EXISTS:
 			return 1;
+		case VAR_TO_BYTES:
+		case BYTES_TO_VAR:
 		case MATH_ATAN2:
 		case MATH_FMOD:
 		case MATH_FPOSMOD:
@@ -187,6 +195,8 @@ int VisualScriptBuiltinFunc::get_func_argument_count(BuiltinFunc p_func) {
 		case MATH_EASE:
 		case MATH_STEPIFY:
 		case MATH_RANDOM:
+		case MATH_POLAR2CARTESIAN:
+		case MATH_CARTESIAN2POLAR:
 		case LOGIC_MAX:
 		case LOGIC_MIN:
 		case FUNC_FUNCREF:
@@ -194,9 +204,15 @@ int VisualScriptBuiltinFunc::get_func_argument_count(BuiltinFunc p_func) {
 		case COLORN:
 			return 2;
 		case MATH_LERP:
+		case MATH_INVERSE_LERP:
+		case MATH_SMOOTHSTEP:
 		case MATH_DECTIME:
+		case MATH_WRAP:
+		case MATH_WRAPF:
 		case LOGIC_CLAMP:
 			return 3;
+		case MATH_RANGE_LERP:
+			return 5;
 		case FUNC_MAX: {
 		}
 	}
@@ -243,9 +259,14 @@ PropertyInfo VisualScriptBuiltinFunc::get_input_value_port_info(int p_idx) const
 		case MATH_ASIN:
 		case MATH_ACOS:
 		case MATH_ATAN:
-		case MATH_ATAN2:
 		case MATH_SQRT: {
-			return PropertyInfo(Variant::REAL, "num");
+			return PropertyInfo(Variant::REAL, "s");
+		} break;
+		case MATH_ATAN2: {
+			if (p_idx == 0)
+				return PropertyInfo(Variant::REAL, "y");
+			else
+				return PropertyInfo(Variant::REAL, "x");
 		} break;
 		case MATH_FMOD:
 		case MATH_FPOSMOD: {
@@ -259,7 +280,7 @@ PropertyInfo VisualScriptBuiltinFunc::get_input_value_port_info(int p_idx) const
 		case MATH_ROUND:
 		case MATH_ABS:
 		case MATH_SIGN: {
-			return PropertyInfo(Variant::REAL, "num");
+			return PropertyInfo(Variant::REAL, "s");
 
 		} break;
 
@@ -273,7 +294,7 @@ PropertyInfo VisualScriptBuiltinFunc::get_input_value_port_info(int p_idx) const
 		case MATH_EXP:
 		case MATH_ISNAN:
 		case MATH_ISINF: {
-			return PropertyInfo(Variant::REAL, "num");
+			return PropertyInfo(Variant::REAL, "s");
 		} break;
 		case MATH_EASE: {
 			if (p_idx == 0)
@@ -297,7 +318,34 @@ PropertyInfo VisualScriptBuiltinFunc::get_input_value_port_info(int p_idx) const
 				return PropertyInfo(Variant::REAL, "to");
 			else
 				return PropertyInfo(Variant::REAL, "weight");
-
+		} break;
+		case MATH_INVERSE_LERP: {
+			if (p_idx == 0)
+				return PropertyInfo(Variant::REAL, "from");
+			else if (p_idx == 1)
+				return PropertyInfo(Variant::REAL, "to");
+			else
+				return PropertyInfo(Variant::REAL, "weight");
+		} break;
+		case MATH_RANGE_LERP: {
+			if (p_idx == 0)
+				return PropertyInfo(Variant::REAL, "value");
+			else if (p_idx == 1)
+				return PropertyInfo(Variant::REAL, "istart");
+			else if (p_idx == 2)
+				return PropertyInfo(Variant::REAL, "istop");
+			else if (p_idx == 3)
+				return PropertyInfo(Variant::REAL, "ostart");
+			else
+				return PropertyInfo(Variant::REAL, "ostop");
+		} break;
+		case MATH_SMOOTHSTEP: {
+			if (p_idx == 0)
+				return PropertyInfo(Variant::REAL, "from");
+			else if (p_idx == 1)
+				return PropertyInfo(Variant::REAL, "to");
+			else
+				return PropertyInfo(Variant::REAL, "weight");
 		} break;
 		case MATH_DECTIME: {
 			if (p_idx == 0)
@@ -340,6 +388,34 @@ PropertyInfo VisualScriptBuiltinFunc::get_input_value_port_info(int p_idx) const
 		case MATH_DB2LINEAR: {
 			return PropertyInfo(Variant::REAL, "db");
 		} break;
+		case MATH_POLAR2CARTESIAN: {
+			if (p_idx == 0)
+				return PropertyInfo(Variant::REAL, "r");
+			else
+				return PropertyInfo(Variant::REAL, "th");
+		} break;
+		case MATH_CARTESIAN2POLAR: {
+			if (p_idx == 0)
+				return PropertyInfo(Variant::REAL, "x");
+			else
+				return PropertyInfo(Variant::REAL, "y");
+		} break;
+		case MATH_WRAP: {
+			if (p_idx == 0)
+				return PropertyInfo(Variant::INT, "value");
+			else if (p_idx == 1)
+				return PropertyInfo(Variant::INT, "min");
+			else
+				return PropertyInfo(Variant::INT, "max");
+		} break;
+		case MATH_WRAPF: {
+			if (p_idx == 0)
+				return PropertyInfo(Variant::REAL, "value");
+			else if (p_idx == 1)
+				return PropertyInfo(Variant::REAL, "min");
+			else
+				return PropertyInfo(Variant::REAL, "max");
+		} break;
 		case LOGIC_MAX: {
 			if (p_idx == 0)
 				return PropertyInfo(Variant::REAL, "a");
@@ -354,14 +430,14 @@ PropertyInfo VisualScriptBuiltinFunc::get_input_value_port_info(int p_idx) const
 		} break;
 		case LOGIC_CLAMP: {
 			if (p_idx == 0)
-				return PropertyInfo(Variant::REAL, "a");
-			else if (p_idx == 0) // FIXME: is it ok to test p_idx == 0 twice?
+				return PropertyInfo(Variant::REAL, "value");
+			else if (p_idx == 1)
 				return PropertyInfo(Variant::REAL, "min");
 			else
 				return PropertyInfo(Variant::REAL, "max");
 		} break;
 		case LOGIC_NEAREST_PO2: {
-			return PropertyInfo(Variant::INT, "num");
+			return PropertyInfo(Variant::INT, "value");
 		} break;
 		case OBJ_WEAKREF: {
 
@@ -425,12 +501,18 @@ PropertyInfo VisualScriptBuiltinFunc::get_input_value_port_info(int p_idx) const
 			return PropertyInfo(Variant::STRING, "string");
 		} break;
 		case VAR_TO_BYTES: {
-			return PropertyInfo(Variant::NIL, "var");
+			if (p_idx == 0)
+				return PropertyInfo(Variant::NIL, "var");
+			else
+				return PropertyInfo(Variant::BOOL, "full_objects");
 
 		} break;
 		case BYTES_TO_VAR: {
 
-			return PropertyInfo(Variant::POOL_BYTE_ARRAY, "bytes");
+			if (p_idx == 0)
+				return PropertyInfo(Variant::POOL_BYTE_ARRAY, "bytes");
+			else
+				return PropertyInfo(Variant::BOOL, "allow_objects");
 		} break;
 		case COLORN: {
 
@@ -495,6 +577,9 @@ PropertyInfo VisualScriptBuiltinFunc::get_output_value_port_info(int p_idx) cons
 		} break;
 		case MATH_STEPIFY:
 		case MATH_LERP:
+		case MATH_INVERSE_LERP:
+		case MATH_RANGE_LERP:
+		case MATH_SMOOTHSTEP:
 		case MATH_DECTIME: {
 			t = Variant::REAL;
 
@@ -523,8 +608,16 @@ PropertyInfo VisualScriptBuiltinFunc::get_output_value_port_info(int p_idx) cons
 		case MATH_DEG2RAD:
 		case MATH_RAD2DEG:
 		case MATH_LINEAR2DB:
+		case MATH_WRAPF:
 		case MATH_DB2LINEAR: {
 			t = Variant::REAL;
+		} break;
+		case MATH_POLAR2CARTESIAN:
+		case MATH_CARTESIAN2POLAR: {
+			t = Variant::VECTOR2;
+		} break;
+		case MATH_WRAP: {
+			t = Variant::INT;
 		} break;
 		case LOGIC_MAX:
 		case LOGIC_MIN:
@@ -579,11 +672,15 @@ PropertyInfo VisualScriptBuiltinFunc::get_output_value_port_info(int p_idx) cons
 
 		} break;
 		case VAR_TO_BYTES: {
-			t = Variant::POOL_BYTE_ARRAY;
+			if (p_idx == 0)
+				t = Variant::POOL_BYTE_ARRAY;
+			else
+				t = Variant::BOOL;
 
 		} break;
 		case BYTES_TO_VAR: {
-
+			if (p_idx == 1)
+				t = Variant::BOOL;
 		} break;
 		case COLORN: {
 			t = Variant::COLOR;
@@ -595,12 +692,14 @@ PropertyInfo VisualScriptBuiltinFunc::get_output_value_port_info(int p_idx) cons
 	return PropertyInfo(t, "");
 }
 
+/*
 String VisualScriptBuiltinFunc::get_caption() const {
 
 	return "BuiltinFunc";
 }
+*/
 
-String VisualScriptBuiltinFunc::get_text() const {
+String VisualScriptBuiltinFunc::get_caption() const {
 
 	return func_name[func];
 }
@@ -795,6 +894,28 @@ void VisualScriptBuiltinFunc::exec_func(BuiltinFunc p_func, const Variant **p_in
 			VALIDATE_ARG_NUM(2);
 			*r_return = Math::lerp((double)*p_inputs[0], (double)*p_inputs[1], (double)*p_inputs[2]);
 		} break;
+		case VisualScriptBuiltinFunc::MATH_INVERSE_LERP: {
+
+			VALIDATE_ARG_NUM(0);
+			VALIDATE_ARG_NUM(1);
+			VALIDATE_ARG_NUM(2);
+			*r_return = Math::inverse_lerp((double)*p_inputs[0], (double)*p_inputs[1], (double)*p_inputs[2]);
+		} break;
+		case VisualScriptBuiltinFunc::MATH_RANGE_LERP: {
+
+			VALIDATE_ARG_NUM(0);
+			VALIDATE_ARG_NUM(1);
+			VALIDATE_ARG_NUM(2);
+			VALIDATE_ARG_NUM(3);
+			VALIDATE_ARG_NUM(4);
+			*r_return = Math::range_lerp((double)*p_inputs[0], (double)*p_inputs[1], (double)*p_inputs[2], (double)*p_inputs[3], (double)*p_inputs[4]);
+		} break;
+		case VisualScriptBuiltinFunc::MATH_SMOOTHSTEP: {
+			VALIDATE_ARG_NUM(0);
+			VALIDATE_ARG_NUM(1);
+			VALIDATE_ARG_NUM(2);
+			*r_return = Math::smoothstep((double)*p_inputs[0], (double)*p_inputs[1], (double)*p_inputs[2]);
+		} break;
 		case VisualScriptBuiltinFunc::MATH_DECTIME: {
 
 			VALIDATE_ARG_NUM(0);
@@ -856,6 +977,32 @@ void VisualScriptBuiltinFunc::exec_func(BuiltinFunc p_func, const Variant **p_in
 			VALIDATE_ARG_NUM(0);
 			*r_return = Math::db2linear((double)*p_inputs[0]);
 		} break;
+		case VisualScriptBuiltinFunc::MATH_POLAR2CARTESIAN: {
+			VALIDATE_ARG_NUM(0);
+			VALIDATE_ARG_NUM(1);
+			double r = *p_inputs[0];
+			double th = *p_inputs[1];
+			*r_return = Vector2(r * Math::cos(th), r * Math::sin(th));
+		} break;
+		case VisualScriptBuiltinFunc::MATH_CARTESIAN2POLAR: {
+			VALIDATE_ARG_NUM(0);
+			VALIDATE_ARG_NUM(1);
+			double x = *p_inputs[0];
+			double y = *p_inputs[1];
+			*r_return = Vector2(Math::sqrt(x * x + y * y), Math::atan2(y, x));
+		} break;
+		case VisualScriptBuiltinFunc::MATH_WRAP: {
+			VALIDATE_ARG_NUM(0);
+			VALIDATE_ARG_NUM(1);
+			VALIDATE_ARG_NUM(2);
+			*r_return = Math::wrapi((int64_t)*p_inputs[0], (int64_t)*p_inputs[1], (int64_t)*p_inputs[2]);
+		} break;
+		case VisualScriptBuiltinFunc::MATH_WRAPF: {
+			VALIDATE_ARG_NUM(0);
+			VALIDATE_ARG_NUM(1);
+			VALIDATE_ARG_NUM(2);
+			*r_return = Math::wrapf((double)*p_inputs[0], (double)*p_inputs[1], (double)*p_inputs[2]);
+		} break;
 		case VisualScriptBuiltinFunc::LOGIC_MAX: {
 
 			if (p_inputs[0]->get_type() == Variant::INT && p_inputs[1]->get_type() == Variant::INT) {
@@ -915,7 +1062,7 @@ void VisualScriptBuiltinFunc::exec_func(BuiltinFunc p_func, const Variant **p_in
 
 			VALIDATE_ARG_NUM(0);
 			int64_t num = *p_inputs[0];
-			*r_return = nearest_power_of_2(num);
+			*r_return = next_power_of_2(num);
 		} break;
 		case VisualScriptBuiltinFunc::OBJ_WEAKREF: {
 
@@ -1029,15 +1176,12 @@ void VisualScriptBuiltinFunc::exec_func(BuiltinFunc p_func, const Variant **p_in
 		case VisualScriptBuiltinFunc::TEXT_PRINTERR: {
 
 			String str = *p_inputs[0];
-
-			//str+="\n";
-			OS::get_singleton()->printerr("%s\n", str.utf8().get_data());
+			print_error(str);
 
 		} break;
 		case VisualScriptBuiltinFunc::TEXT_PRINTRAW: {
-			String str = *p_inputs[0];
 
-			//str+="\n";
+			String str = *p_inputs[0];
 			OS::get_singleton()->print("%s", str.utf8().get_data());
 
 		} break;
@@ -1075,9 +1219,16 @@ void VisualScriptBuiltinFunc::exec_func(BuiltinFunc p_func, const Variant **p_in
 		} break;
 		case VisualScriptBuiltinFunc::VAR_TO_BYTES: {
 
+			if (p_inputs[1]->get_type() != Variant::BOOL) {
+				r_error.error = Variant::CallError::CALL_ERROR_INVALID_ARGUMENT;
+				r_error.argument = 1;
+				r_error.expected = Variant::BOOL;
+				return;
+			}
 			PoolByteArray barr;
 			int len;
-			Error err = encode_variant(*p_inputs[0], NULL, len);
+			bool full_objects = *p_inputs[1];
+			Error err = encode_variant(*p_inputs[0], NULL, len, full_objects);
 			if (err) {
 				r_error.error = Variant::CallError::CALL_ERROR_INVALID_ARGUMENT;
 				r_error.argument = 0;
@@ -1089,7 +1240,7 @@ void VisualScriptBuiltinFunc::exec_func(BuiltinFunc p_func, const Variant **p_in
 			barr.resize(len);
 			{
 				PoolByteArray::Write w = barr.write();
-				encode_variant(*p_inputs[0], w.ptr(), len);
+				encode_variant(*p_inputs[0], w.ptr(), len, full_objects);
 			}
 			*r_return = barr;
 		} break;
@@ -1099,15 +1250,21 @@ void VisualScriptBuiltinFunc::exec_func(BuiltinFunc p_func, const Variant **p_in
 				r_error.error = Variant::CallError::CALL_ERROR_INVALID_ARGUMENT;
 				r_error.argument = 0;
 				r_error.expected = Variant::POOL_BYTE_ARRAY;
-
+				return;
+			}
+			if (p_inputs[1]->get_type() != Variant::BOOL) {
+				r_error.error = Variant::CallError::CALL_ERROR_INVALID_ARGUMENT;
+				r_error.argument = 1;
+				r_error.expected = Variant::BOOL;
 				return;
 			}
 
 			PoolByteArray varr = *p_inputs[0];
+			bool allow_objects = *p_inputs[1];
 			Variant ret;
 			{
 				PoolByteArray::Read r = varr.read();
-				Error err = decode_variant(ret, r.ptr(), varr.size(), NULL);
+				Error err = decode_variant(ret, r.ptr(), varr.size(), NULL, allow_objects);
 				if (err != OK) {
 					r_error_str = RTR("Not enough bytes for decoding bytes, or invalid format.");
 					r_error.error = Variant::CallError::CALL_ERROR_INVALID_ARGUMENT;
@@ -1130,7 +1287,8 @@ void VisualScriptBuiltinFunc::exec_func(BuiltinFunc p_func, const Variant **p_in
 			*r_return = String(color);
 
 		} break;
-		default: {}
+		default: {
+		}
 	}
 }
 
@@ -1175,6 +1333,77 @@ void VisualScriptBuiltinFunc::_bind_methods() {
 		cc += func_name[i];
 	}
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "function", PROPERTY_HINT_ENUM, cc), "set_func", "get_func");
+
+	BIND_ENUM_CONSTANT(MATH_SIN);
+	BIND_ENUM_CONSTANT(MATH_COS);
+	BIND_ENUM_CONSTANT(MATH_TAN);
+	BIND_ENUM_CONSTANT(MATH_SINH);
+	BIND_ENUM_CONSTANT(MATH_COSH);
+	BIND_ENUM_CONSTANT(MATH_TANH);
+	BIND_ENUM_CONSTANT(MATH_ASIN);
+	BIND_ENUM_CONSTANT(MATH_ACOS);
+	BIND_ENUM_CONSTANT(MATH_ATAN);
+	BIND_ENUM_CONSTANT(MATH_ATAN2);
+	BIND_ENUM_CONSTANT(MATH_SQRT);
+	BIND_ENUM_CONSTANT(MATH_FMOD);
+	BIND_ENUM_CONSTANT(MATH_FPOSMOD);
+	BIND_ENUM_CONSTANT(MATH_FLOOR);
+	BIND_ENUM_CONSTANT(MATH_CEIL);
+	BIND_ENUM_CONSTANT(MATH_ROUND);
+	BIND_ENUM_CONSTANT(MATH_ABS);
+	BIND_ENUM_CONSTANT(MATH_SIGN);
+	BIND_ENUM_CONSTANT(MATH_POW);
+	BIND_ENUM_CONSTANT(MATH_LOG);
+	BIND_ENUM_CONSTANT(MATH_EXP);
+	BIND_ENUM_CONSTANT(MATH_ISNAN);
+	BIND_ENUM_CONSTANT(MATH_ISINF);
+	BIND_ENUM_CONSTANT(MATH_EASE);
+	BIND_ENUM_CONSTANT(MATH_DECIMALS);
+	BIND_ENUM_CONSTANT(MATH_STEPIFY);
+	BIND_ENUM_CONSTANT(MATH_LERP);
+	BIND_ENUM_CONSTANT(MATH_INVERSE_LERP);
+	BIND_ENUM_CONSTANT(MATH_RANGE_LERP);
+	BIND_ENUM_CONSTANT(MATH_DECTIME);
+	BIND_ENUM_CONSTANT(MATH_RANDOMIZE);
+	BIND_ENUM_CONSTANT(MATH_RAND);
+	BIND_ENUM_CONSTANT(MATH_RANDF);
+	BIND_ENUM_CONSTANT(MATH_RANDOM);
+	BIND_ENUM_CONSTANT(MATH_SEED);
+	BIND_ENUM_CONSTANT(MATH_RANDSEED);
+	BIND_ENUM_CONSTANT(MATH_DEG2RAD);
+	BIND_ENUM_CONSTANT(MATH_RAD2DEG);
+	BIND_ENUM_CONSTANT(MATH_LINEAR2DB);
+	BIND_ENUM_CONSTANT(MATH_DB2LINEAR);
+	BIND_ENUM_CONSTANT(MATH_POLAR2CARTESIAN);
+	BIND_ENUM_CONSTANT(MATH_CARTESIAN2POLAR);
+	BIND_ENUM_CONSTANT(MATH_WRAP);
+	BIND_ENUM_CONSTANT(MATH_WRAPF);
+	BIND_ENUM_CONSTANT(LOGIC_MAX);
+	BIND_ENUM_CONSTANT(LOGIC_MIN);
+	BIND_ENUM_CONSTANT(LOGIC_CLAMP);
+	BIND_ENUM_CONSTANT(LOGIC_NEAREST_PO2);
+	BIND_ENUM_CONSTANT(OBJ_WEAKREF);
+	BIND_ENUM_CONSTANT(FUNC_FUNCREF);
+	BIND_ENUM_CONSTANT(TYPE_CONVERT);
+	BIND_ENUM_CONSTANT(TYPE_OF);
+	BIND_ENUM_CONSTANT(TYPE_EXISTS);
+	BIND_ENUM_CONSTANT(TEXT_CHAR);
+	BIND_ENUM_CONSTANT(TEXT_STR);
+	BIND_ENUM_CONSTANT(TEXT_PRINT);
+	BIND_ENUM_CONSTANT(TEXT_PRINTERR);
+	BIND_ENUM_CONSTANT(TEXT_PRINTRAW);
+	BIND_ENUM_CONSTANT(VAR_TO_STR);
+	BIND_ENUM_CONSTANT(STR_TO_VAR);
+	BIND_ENUM_CONSTANT(VAR_TO_BYTES);
+	BIND_ENUM_CONSTANT(BYTES_TO_VAR);
+	BIND_ENUM_CONSTANT(COLORN);
+	BIND_ENUM_CONSTANT(MATH_SMOOTHSTEP);
+	BIND_ENUM_CONSTANT(FUNC_MAX);
+}
+
+VisualScriptBuiltinFunc::VisualScriptBuiltinFunc(VisualScriptBuiltinFunc::BuiltinFunc func) {
+
+	this->func = func;
 }
 
 VisualScriptBuiltinFunc::VisualScriptBuiltinFunc() {
@@ -1185,9 +1414,7 @@ VisualScriptBuiltinFunc::VisualScriptBuiltinFunc() {
 template <VisualScriptBuiltinFunc::BuiltinFunc func>
 static Ref<VisualScriptNode> create_builtin_func_node(const String &p_name) {
 
-	Ref<VisualScriptBuiltinFunc> node;
-	node.instance();
-	node->set_func(func);
+	Ref<VisualScriptBuiltinFunc> node = memnew(VisualScriptBuiltinFunc(func));
 	return node;
 }
 
@@ -1223,6 +1450,9 @@ void register_visual_script_builtin_func_node() {
 	VisualScriptLanguage::singleton->add_register_func("functions/built_in/decimals", create_builtin_func_node<VisualScriptBuiltinFunc::MATH_DECIMALS>);
 	VisualScriptLanguage::singleton->add_register_func("functions/built_in/stepify", create_builtin_func_node<VisualScriptBuiltinFunc::MATH_STEPIFY>);
 	VisualScriptLanguage::singleton->add_register_func("functions/built_in/lerp", create_builtin_func_node<VisualScriptBuiltinFunc::MATH_LERP>);
+	VisualScriptLanguage::singleton->add_register_func("functions/built_in/inverse_lerp", create_builtin_func_node<VisualScriptBuiltinFunc::MATH_INVERSE_LERP>);
+	VisualScriptLanguage::singleton->add_register_func("functions/built_in/range_lerp", create_builtin_func_node<VisualScriptBuiltinFunc::MATH_RANGE_LERP>);
+	VisualScriptLanguage::singleton->add_register_func("functions/built_in/smoothstep", create_builtin_func_node<VisualScriptBuiltinFunc::MATH_SMOOTHSTEP>);
 	VisualScriptLanguage::singleton->add_register_func("functions/built_in/dectime", create_builtin_func_node<VisualScriptBuiltinFunc::MATH_DECTIME>);
 	VisualScriptLanguage::singleton->add_register_func("functions/built_in/randomize", create_builtin_func_node<VisualScriptBuiltinFunc::MATH_RANDOMIZE>);
 	VisualScriptLanguage::singleton->add_register_func("functions/built_in/rand", create_builtin_func_node<VisualScriptBuiltinFunc::MATH_RAND>);
@@ -1235,6 +1465,10 @@ void register_visual_script_builtin_func_node() {
 	VisualScriptLanguage::singleton->add_register_func("functions/built_in/rad2deg", create_builtin_func_node<VisualScriptBuiltinFunc::MATH_RAD2DEG>);
 	VisualScriptLanguage::singleton->add_register_func("functions/built_in/linear2db", create_builtin_func_node<VisualScriptBuiltinFunc::MATH_LINEAR2DB>);
 	VisualScriptLanguage::singleton->add_register_func("functions/built_in/db2linear", create_builtin_func_node<VisualScriptBuiltinFunc::MATH_DB2LINEAR>);
+	VisualScriptLanguage::singleton->add_register_func("functions/built_in/polar2cartesian", create_builtin_func_node<VisualScriptBuiltinFunc::MATH_POLAR2CARTESIAN>);
+	VisualScriptLanguage::singleton->add_register_func("functions/built_in/cartesian2polar", create_builtin_func_node<VisualScriptBuiltinFunc::MATH_CARTESIAN2POLAR>);
+	VisualScriptLanguage::singleton->add_register_func("functions/built_in/wrapi", create_builtin_func_node<VisualScriptBuiltinFunc::MATH_WRAP>);
+	VisualScriptLanguage::singleton->add_register_func("functions/built_in/wrapf", create_builtin_func_node<VisualScriptBuiltinFunc::MATH_WRAPF>);
 
 	VisualScriptLanguage::singleton->add_register_func("functions/built_in/max", create_builtin_func_node<VisualScriptBuiltinFunc::LOGIC_MAX>);
 	VisualScriptLanguage::singleton->add_register_func("functions/built_in/min", create_builtin_func_node<VisualScriptBuiltinFunc::LOGIC_MIN>);

@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,15 +27,14 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef AUDIO_STREAM_STB_VORBIS_H
 #define AUDIO_STREAM_STB_VORBIS_H
 
-#include "io/resource_loader.h"
+#include "core/io/resource_loader.h"
 #include "servers/audio/audio_stream.h"
 
-#define STB_VORBIS_HEADER_ONLY
-#include "thirdparty/misc/stb_vorbis.c"
-#undef STB_VORBIS_HEADER_ONLY
+#include "thirdparty/misc/stb_vorbis.h"
 
 class AudioStreamOGGVorbis;
 
@@ -64,10 +63,8 @@ public:
 
 	virtual int get_loop_count() const; //times it looped
 
-	virtual float get_pos() const;
-	virtual void seek_pos(float p_time);
-
-	virtual float get_length() const; //if supported, otherwise return 0
+	virtual float get_playback_position() const;
+	virtual void seek(float p_time);
 
 	AudioStreamPlaybackOGGVorbis() {}
 	~AudioStreamPlaybackOGGVorbis();
@@ -89,6 +86,8 @@ class AudioStreamOGGVorbis : public AudioStream {
 	int channels;
 	float length;
 	bool loop;
+	float loop_offset;
+	void clear_data();
 
 protected:
 	static void _bind_methods();
@@ -97,13 +96,19 @@ public:
 	void set_loop(bool p_enable);
 	bool has_loop() const;
 
+	void set_loop_offset(float p_seconds);
+	float get_loop_offset() const;
+
 	virtual Ref<AudioStreamPlayback> instance_playback();
 	virtual String get_stream_name() const;
 
 	void set_data(const PoolVector<uint8_t> &p_data);
 	PoolVector<uint8_t> get_data() const;
 
+	virtual float get_length() const; //if supported, otherwise return 0
+
 	AudioStreamOGGVorbis();
+	virtual ~AudioStreamOGGVorbis();
 };
 
 #endif

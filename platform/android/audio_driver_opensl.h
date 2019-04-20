@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,11 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef AUDIO_DRIVER_OPENSL_H
 #define AUDIO_DRIVER_OPENSL_H
 
-#include "os/mutex.h"
+#include "core/os/mutex.h"
 #include "servers/audio_server.h"
 
 #include <SLES/OpenSLES.h>
@@ -53,13 +54,18 @@ class AudioDriverOpenSL : public AudioDriver {
 	int32_t *mixdown_buffer;
 	int last_free;
 
+	Vector<int16_t> rec_buffer;
+
 	SLPlayItf playItf;
+	SLRecordItf recordItf;
 	SLObjectItf sl;
 	SLEngineItf EngineItf;
 	SLObjectItf OutputMix;
 	SLVolumeItf volumeItf;
 	SLObjectItf player;
+	SLObjectItf recorder;
 	SLAndroidSimpleBufferQueueItf bufferQueueItf;
+	SLAndroidSimpleBufferQueueItf recordBufferQueueItf;
 	SLDataSource audioSource;
 	SLDataFormat_PCM pcm;
 	SLDataSink audioSink;
@@ -69,19 +75,20 @@ class AudioDriverOpenSL : public AudioDriver {
 	static AudioDriverOpenSL *s_ad;
 
 	void _buffer_callback(
-			SLAndroidSimpleBufferQueueItf queueItf
-			/*   SLuint32 eventFlags,
-	    const void * pBuffer,
-	    SLuint32 bufferSize,
-	    SLuint32 dataUsed*/);
+			SLAndroidSimpleBufferQueueItf queueItf);
 
 	static void _buffer_callbacks(
 			SLAndroidSimpleBufferQueueItf queueItf,
-			/*SLuint32 eventFlags,
-	    const void * pBuffer,
-	    SLuint32 bufferSize,
-	    SLuint32 dataUsed,*/
 			void *pContext);
+
+	void _record_buffer_callback(
+			SLAndroidSimpleBufferQueueItf queueItf);
+
+	static void _record_buffer_callbacks(
+			SLAndroidSimpleBufferQueueItf queueItf,
+			void *pContext);
+
+	virtual Error capture_init_device();
 
 public:
 	void set_singleton();
@@ -97,6 +104,9 @@ public:
 	virtual void finish();
 
 	virtual void set_pause(bool p_pause);
+
+	virtual Error capture_start();
+	virtual Error capture_stop();
 
 	AudioDriverOpenSL();
 };

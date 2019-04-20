@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,15 +27,17 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef VISUALSCRIPT_EDITOR_H
 #define VISUALSCRIPT_EDITOR_H
 
 #include "editor/create_dialog.h"
 #include "editor/plugins/script_editor_plugin.h"
 #include "editor/property_editor.h"
-#include "editor/property_selector.h"
 #include "scene/gui/graph_edit.h"
 #include "visual_script.h"
+#include "visual_script_property_selector.h"
+
 class VisualScriptEditorSignalEdit;
 class VisualScriptEditorVariableEdit;
 
@@ -61,15 +63,8 @@ class VisualScriptEditor : public ScriptEditorBase {
 
 	enum PortAction {
 
-		CREATE_CALL,
-		CREATE_SET,
-		CREATE_GET,
-		CREATE_COND,
-		CREATE_SEQUENCE,
-		CREATE_SWITCH,
-		CREATE_ITERATOR,
-		CREATE_WHILE,
-		CREATE_RETURN,
+		CREATE_CALL_SET_GET,
+		CREATE_ACTION,
 	};
 
 	enum MemberAction {
@@ -99,15 +94,16 @@ class VisualScriptEditor : public ScriptEditorBase {
 	VisualScriptEditorSignalEdit *signal_editor;
 
 	AcceptDialog *edit_signal_dialog;
-	PropertyEditor *edit_signal_edit;
+	EditorInspector *edit_signal_edit;
 
-	PropertySelector *method_select;
-	PropertySelector *new_connect_node_select;
+	VisualScriptPropertySelector *method_select;
+	VisualScriptPropertySelector *new_connect_node_select;
+	VisualScriptPropertySelector *new_virtual_method_select;
 
 	VisualScriptEditorVariableEdit *variable_editor;
 
 	AcceptDialog *edit_variable_dialog;
-	PropertyEditor *edit_variable_edit;
+	EditorInspector *edit_variable_edit;
 
 	CustomPropertyEditor *default_value_edit;
 
@@ -135,10 +131,7 @@ class VisualScriptEditor : public ScriptEditorBase {
 		Vector<Pair<Variant::Type, String> > args;
 	};
 
-	Map<int, VirtualInMenu> virtuals_in_menu;
-
-	PopupMenu *new_function_menu;
-
+	HashMap<StringName, Ref<StyleBox> > node_styles;
 	StringName edited_func;
 
 	void _update_graph_connections();
@@ -163,9 +156,7 @@ class VisualScriptEditor : public ScriptEditorBase {
 
 	static Clipboard *clipboard;
 
-	PopupMenu *port_action_popup;
 	PopupMenu *member_popup;
-
 	MemberType member_type;
 	String member_name;
 
@@ -175,7 +166,17 @@ class VisualScriptEditor : public ScriptEditorBase {
 	Vector2 port_action_pos;
 	int port_action_new_node;
 	void _port_action_menu(int p_option);
-	void _selected_connect_node_method_or_setget(const String &p_text);
+
+	void new_node(Ref<VisualScriptNode> vnode, Vector2 ofs);
+
+	void connect_data(Ref<VisualScriptNode> vnode_old, Ref<VisualScriptNode> vnode, int new_id);
+
+	void _selected_connect_node(const String &p_text, const String &p_category, const bool p_connecting = true);
+	void connect_seq(Ref<VisualScriptNode> vnode_old, Ref<VisualScriptNode> vnode_new, int new_id);
+
+	void _cancel_connect_node();
+	void _create_new_node(const String &p_text, const String &p_category, const Vector2 &p_point);
+	void _selected_new_virtual_method(const String &p_text, const String &p_category, const bool p_connecting);
 
 	int error_line;
 
@@ -187,7 +188,6 @@ class VisualScriptEditor : public ScriptEditorBase {
 	void _change_base_type();
 	void _member_selected();
 	void _member_edited();
-	void _override_pressed(int p_id);
 
 	void _begin_node_move();
 	void _end_node_move();
@@ -211,6 +211,10 @@ class VisualScriptEditor : public ScriptEditorBase {
 	String revert_on_drag;
 
 	void _input(const Ref<InputEvent> &p_event);
+
+	void _generic_search();
+
+	void _members_gui_input(const Ref<InputEvent> &p_event);
 	void _on_nodes_delete();
 	void _on_nodes_duplicate();
 
@@ -230,10 +234,10 @@ class VisualScriptEditor : public ScriptEditorBase {
 	void _comment_node_resized(const Vector2 &p_new_size, int p_node);
 
 	int selecting_method_id;
-	void _selected_method(const String &p_method);
+	void _selected_method(const String &p_method, const String &p_type, const bool p_connecting);
 
 	void _draw_color_over_button(Object *obj, Color p_color);
-	void _button_resource_previewed(const String &p_path, const Ref<Texture> &p_preview, Variant p_ud);
+	void _button_resource_previewed(const String &p_path, const Ref<Texture> &p_preview, const Ref<Texture> &p_small_preview, Variant p_ud);
 
 	VisualScriptNode::TypeGuess _guess_output_type(int p_port_action_node, int p_port_action_output, Set<int> &visited_nodes);
 
@@ -245,10 +249,13 @@ protected:
 	static void _bind_methods();
 
 public:
+	virtual void add_syntax_highlighter(SyntaxHighlighter *p_highlighter);
+	virtual void set_syntax_highlighter(SyntaxHighlighter *p_highlighter);
+
 	virtual void apply_code();
-	virtual Ref<Script> get_edited_script() const;
+	virtual RES get_edited_resource() const;
+	virtual void set_edited_resource(const RES &p_res);
 	virtual Vector<String> get_functions();
-	virtual void set_edited_script(const Ref<Script> &p_script);
 	virtual void reload_text();
 	virtual String get_name();
 	virtual Ref<Texture> get_icon();
@@ -278,6 +285,29 @@ public:
 
 	VisualScriptEditor();
 	~VisualScriptEditor();
+};
+
+// Singleton
+class _VisualScriptEditor : public Object {
+	GDCLASS(_VisualScriptEditor, Object);
+
+	friend class VisualScriptLanguage;
+
+protected:
+	static void _bind_methods();
+	static _VisualScriptEditor *singleton;
+
+	static Map<String, RefPtr> custom_nodes;
+	static Ref<VisualScriptNode> create_node_custom(const String &p_name);
+
+public:
+	static _VisualScriptEditor *get_singleton() { return singleton; }
+
+	void add_custom_node(const String &p_name, const String &p_category, const Ref<Script> &p_script);
+	void remove_custom_node(const String &p_name, const String &p_category);
+
+	_VisualScriptEditor();
+	~_VisualScriptEditor();
 };
 #endif
 

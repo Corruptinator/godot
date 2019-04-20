@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,7 +27,9 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "collision_object.h"
+
 #include "scene/scene_string_names.h"
 #include "servers/physics_server.h"
 
@@ -50,7 +52,7 @@ void CollisionObject::_notification(int p_what) {
 
 			_update_pickable();
 			//get space
-		};
+		} break;
 
 		case NOTIFICATION_TRANSFORM_CHANGED: {
 
@@ -144,9 +146,9 @@ void CollisionObject::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("shape_owner_clear_shapes", "owner_id"), &CollisionObject::shape_owner_clear_shapes);
 	ClassDB::bind_method(D_METHOD("shape_find_owner", "shape_index"), &CollisionObject::shape_find_owner);
 
-	BIND_VMETHOD(MethodInfo("_input_event", PropertyInfo(Variant::OBJECT, "camera"), PropertyInfo(Variant::OBJECT, "event", PROPERTY_HINT_RESOURCE_TYPE, "InputEvent"), PropertyInfo(Variant::VECTOR3, "click_pos"), PropertyInfo(Variant::VECTOR3, "click_normal"), PropertyInfo(Variant::INT, "shape_idx")));
+	BIND_VMETHOD(MethodInfo("_input_event", PropertyInfo(Variant::OBJECT, "camera"), PropertyInfo(Variant::OBJECT, "event", PROPERTY_HINT_RESOURCE_TYPE, "InputEvent"), PropertyInfo(Variant::VECTOR3, "click_position"), PropertyInfo(Variant::VECTOR3, "click_normal"), PropertyInfo(Variant::INT, "shape_idx")));
 
-	ADD_SIGNAL(MethodInfo("input_event", PropertyInfo(Variant::OBJECT, "camera"), PropertyInfo(Variant::OBJECT, "event", PROPERTY_HINT_RESOURCE_TYPE, "InputEvent"), PropertyInfo(Variant::VECTOR3, "click_pos"), PropertyInfo(Variant::VECTOR3, "click_normal"), PropertyInfo(Variant::INT, "shape_idx")));
+	ADD_SIGNAL(MethodInfo("input_event", PropertyInfo(Variant::OBJECT, "camera", PROPERTY_HINT_RESOURCE_TYPE, "Node"), PropertyInfo(Variant::OBJECT, "event", PROPERTY_HINT_RESOURCE_TYPE, "InputEvent"), PropertyInfo(Variant::VECTOR3, "click_position"), PropertyInfo(Variant::VECTOR3, "click_normal"), PropertyInfo(Variant::INT, "shape_idx")));
 	ADD_SIGNAL(MethodInfo("mouse_entered"));
 	ADD_SIGNAL(MethodInfo("mouse_exited"));
 
@@ -160,7 +162,7 @@ uint32_t CollisionObject::create_shape_owner(Object *p_owner) {
 	uint32_t id;
 
 	if (shapes.size() == 0) {
-		id = 1;
+		id = 0;
 	} else {
 		id = shapes.back()->key() + 1;
 	}
@@ -303,7 +305,7 @@ void CollisionObject::shape_owner_remove_shape(uint32_t p_owner, int p_shape) {
 	for (Map<uint32_t, ShapeData>::Element *E = shapes.front(); E; E = E->next()) {
 		for (int i = 0; i < E->get().shapes.size(); i++) {
 			if (E->get().shapes[i].index > index_to_remove) {
-				E->get().shapes[i].index -= 1;
+				E->get().shapes.write[i].index -= 1;
 			}
 		}
 	}
@@ -361,6 +363,20 @@ void CollisionObject::set_capture_input_on_drag(bool p_capture) {
 bool CollisionObject::get_capture_input_on_drag() const {
 
 	return capture_input_on_drag;
+}
+
+String CollisionObject::get_configuration_warning() const {
+
+	String warning = Spatial::get_configuration_warning();
+
+	if (shapes.empty()) {
+		if (warning == String()) {
+			warning += "\n";
+		}
+		warning += TTR("This node has no shape, so it can't collide or interact with other objects.\nConsider adding a CollisionShape or CollisionPolygon as a child to define its shape.");
+	}
+
+	return warning;
 }
 
 CollisionObject::CollisionObject() {

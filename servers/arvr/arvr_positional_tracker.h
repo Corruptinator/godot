@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,12 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef ARVR_POSITIONAL_TRACKER_H
 #define ARVR_POSITIONAL_TRACKER_H
 
-#include "os/thread_safe.h"
+#include "core/os/thread_safe.h"
+#include "scene/resources/mesh.h"
 #include "servers/arvr_server.h"
 
 /**
@@ -39,14 +41,18 @@
 	The positional tracker object as an object that represents the position and orientation of a tracked object like a controller or headset.
 	An AR/VR Interface will registered the trackers it manages with our AR/VR server and update its position and orientation.
 	This is where potentially additional AR/VR interfaces may be active as there are AR/VR SDKs that solely deal with positional tracking.
-
-	@TODO:
-	- create subclass of spatial node that uses one of our positional trackers to automatically determine its position
 */
 
 class ARVRPositionalTracker : public Object {
 	GDCLASS(ARVRPositionalTracker, Object);
 	_THREAD_SAFE_CLASS_
+
+public:
+	enum TrackerHand {
+		TRACKER_HAND_UNKNOWN, /* unknown or not applicable */
+		TRACKER_LEFT_HAND, /* controller is the left hand controller */
+		TRACKER_RIGHT_HAND /* controller is the right hand controller */
+	};
 
 private:
 	ARVRServer::TrackerType type; // type of tracker
@@ -57,6 +63,9 @@ private:
 	Basis orientation; // our orientation
 	bool tracks_position; // do we track position?
 	Vector3 rw_position; // our position "in the real world, so without world_scale applied"
+	Ref<Mesh> mesh; // when available, a mesh that can be used to render this tracker
+	TrackerHand hand; // if known, the hand this tracker is held in
+	real_t rumble; // rumble strength, 0.0 is off, 1.0 is maximum, note that we only record here, arvr_interface is responsible for execution
 
 protected:
 	static void _bind_methods();
@@ -77,11 +86,19 @@ public:
 	Vector3 get_position() const; // get position with world_scale applied
 	void set_rw_position(const Vector3 &p_rw_position);
 	Vector3 get_rw_position() const;
+	ARVRPositionalTracker::TrackerHand get_hand() const;
+	void set_hand(const ARVRPositionalTracker::TrackerHand p_hand);
+	real_t get_rumble() const;
+	void set_rumble(real_t p_rumble);
+	void set_mesh(const Ref<Mesh> &p_mesh);
+	Ref<Mesh> get_mesh() const;
 
 	Transform get_transform(bool p_adjust_by_reference_frame) const;
 
 	ARVRPositionalTracker();
 	~ARVRPositionalTracker();
 };
+
+VARIANT_ENUM_CAST(ARVRPositionalTracker::TrackerHand);
 
 #endif

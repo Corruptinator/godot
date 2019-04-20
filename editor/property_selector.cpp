@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,12 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "property_selector.h"
 
+#include "core/os/keyboard.h"
+#include "editor/editor_node.h"
 #include "editor_scale.h"
-#include "os/keyboard.h"
 
 void PropertySelector::_text_changed(const String &p_newtext) {
 
@@ -75,6 +77,8 @@ void PropertySelector::_update_search() {
 
 	if (properties)
 		set_title(TTR("Select Property"));
+	else if (virtuals_only)
+		set_title(TTR("Select Virtual Method"));
 	else
 		set_title(TTR("Select Method"));
 
@@ -98,10 +102,10 @@ void PropertySelector::_update_search() {
 		} else {
 
 			Object *obj = ObjectDB::get_instance(script);
-			if (obj && obj->cast_to<Script>()) {
+			if (Object::cast_to<Script>(obj)) {
 
 				props.push_back(PropertyInfo(Variant::NIL, "Script Variables", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_CATEGORY));
-				obj->cast_to<Script>()->get_script_property_list(&props);
+				Object::cast_to<Script>(obj)->get_script_property_list(&props);
 			}
 
 			StringName base = base_type;
@@ -117,33 +121,33 @@ void PropertySelector::_update_search() {
 		bool found = false;
 
 		Ref<Texture> type_icons[Variant::VARIANT_MAX] = {
-			Control::get_icon("MiniVariant", "EditorIcons"),
-			Control::get_icon("MiniBoolean", "EditorIcons"),
-			Control::get_icon("MiniInteger", "EditorIcons"),
-			Control::get_icon("MiniFloat", "EditorIcons"),
-			Control::get_icon("MiniString", "EditorIcons"),
-			Control::get_icon("MiniVector2", "EditorIcons"),
-			Control::get_icon("MiniRect2", "EditorIcons"),
-			Control::get_icon("MiniVector3", "EditorIcons"),
-			Control::get_icon("MiniMatrix2", "EditorIcons"),
-			Control::get_icon("MiniPlane", "EditorIcons"),
-			Control::get_icon("MiniQuat", "EditorIcons"),
-			Control::get_icon("MiniAabb", "EditorIcons"),
-			Control::get_icon("MiniMatrix3", "EditorIcons"),
-			Control::get_icon("MiniTransform", "EditorIcons"),
-			Control::get_icon("MiniColor", "EditorIcons"),
-			Control::get_icon("MiniPath", "EditorIcons"),
-			Control::get_icon("MiniRid", "EditorIcons"),
-			Control::get_icon("MiniObject", "EditorIcons"),
-			Control::get_icon("MiniDictionary", "EditorIcons"),
-			Control::get_icon("MiniArray", "EditorIcons"),
-			Control::get_icon("MiniRawArray", "EditorIcons"),
-			Control::get_icon("MiniIntArray", "EditorIcons"),
-			Control::get_icon("MiniFloatArray", "EditorIcons"),
-			Control::get_icon("MiniStringArray", "EditorIcons"),
-			Control::get_icon("MiniVector2Array", "EditorIcons"),
-			Control::get_icon("MiniVector3Array", "EditorIcons"),
-			Control::get_icon("MiniColorArray", "EditorIcons")
+			Control::get_icon("Variant", "EditorIcons"),
+			Control::get_icon("bool", "EditorIcons"),
+			Control::get_icon("int", "EditorIcons"),
+			Control::get_icon("float", "EditorIcons"),
+			Control::get_icon("String", "EditorIcons"),
+			Control::get_icon("Vector2", "EditorIcons"),
+			Control::get_icon("Rect2", "EditorIcons"),
+			Control::get_icon("Vector3", "EditorIcons"),
+			Control::get_icon("Transform2D", "EditorIcons"),
+			Control::get_icon("Plane", "EditorIcons"),
+			Control::get_icon("Quat", "EditorIcons"),
+			Control::get_icon("AABB", "EditorIcons"),
+			Control::get_icon("Basis", "EditorIcons"),
+			Control::get_icon("Transform", "EditorIcons"),
+			Control::get_icon("Color", "EditorIcons"),
+			Control::get_icon("Path", "EditorIcons"),
+			Control::get_icon("RID", "EditorIcons"),
+			Control::get_icon("Object", "EditorIcons"),
+			Control::get_icon("Dictionary", "EditorIcons"),
+			Control::get_icon("Array", "EditorIcons"),
+			Control::get_icon("PoolByteArray", "EditorIcons"),
+			Control::get_icon("PoolIntArray", "EditorIcons"),
+			Control::get_icon("PoolRealArray", "EditorIcons"),
+			Control::get_icon("PoolStringArray", "EditorIcons"),
+			Control::get_icon("PoolVector2Array", "EditorIcons"),
+			Control::get_icon("PoolVector3Array", "EditorIcons"),
+			Control::get_icon("PoolColorArray", "EditorIcons")
 		};
 
 		for (List<PropertyInfo>::Element *E = props.front(); E; E = E->next()) {
@@ -158,10 +162,8 @@ void PropertySelector::_update_search() {
 				Ref<Texture> icon;
 				if (E->get().name == "Script Variables") {
 					icon = get_icon("Script", "EditorIcons");
-				} else if (has_icon(E->get().name, "EditorIcons")) {
-					icon = get_icon(E->get().name, "EditorIcons");
 				} else {
-					icon = get_icon("Object", "EditorIcons");
+					icon = EditorNode::get_singleton()->get_class_icon(E->get().name);
 				}
 				category->set_icon(0, icon);
 				continue;
@@ -172,6 +174,10 @@ void PropertySelector::_update_search() {
 
 			if (search_box->get_text() != String() && E->get().name.find(search_box->get_text()) == -1)
 				continue;
+
+			if (type_filter.size() && type_filter.find(E->get().type) == -1)
+				continue;
+
 			TreeItem *item = search_options->create_item(category ? category : root);
 			item->set_text(0, E->get().name);
 			item->set_metadata(0, E->get().name);
@@ -200,16 +206,16 @@ void PropertySelector::_update_search() {
 		} else {
 
 			Object *obj = ObjectDB::get_instance(script);
-			if (obj && obj->cast_to<Script>()) {
+			if (Object::cast_to<Script>(obj)) {
 
 				methods.push_back(MethodInfo("*Script Methods"));
-				obj->cast_to<Script>()->get_script_method_list(&methods);
+				Object::cast_to<Script>(obj)->get_script_method_list(&methods);
 			}
 
 			StringName base = base_type;
 			while (base) {
 				methods.push_back(MethodInfo("*" + String(base)));
-				ClassDB::get_method_list(base, &methods, true);
+				ClassDB::get_method_list(base, &methods, true, true);
 				base = ClassDB::get_parent_class(base);
 			}
 		}
@@ -230,13 +236,12 @@ void PropertySelector::_update_search() {
 
 				Ref<Texture> icon;
 				script_methods = false;
+				String rep = E->get().name.replace("*", "");
 				if (E->get().name == "*Script Methods") {
 					icon = get_icon("Script", "EditorIcons");
 					script_methods = true;
-				} else if (has_icon(E->get().name, "EditorIcons")) {
-					icon = get_icon(E->get().name, "EditorIcons");
 				} else {
-					icon = get_icon("Object", "EditorIcons");
+					icon = EditorNode::get_singleton()->get_class_icon(rep);
 				}
 				category->set_icon(0, icon);
 
@@ -245,6 +250,12 @@ void PropertySelector::_update_search() {
 
 			String name = E->get().name.get_slice(":", 0);
 			if (!script_methods && name.begins_with("_") && !(E->get().flags & METHOD_FLAG_VIRTUAL))
+				continue;
+
+			if (virtuals_only && !(E->get().flags & METHOD_FLAG_VIRTUAL))
+				continue;
+
+			if (!virtuals_only && (E->get().flags & METHOD_FLAG_VIRTUAL))
 				continue;
 
 			if (search_box->get_text() != String() && name.find(search_box->get_text()) == -1)
@@ -282,6 +293,12 @@ void PropertySelector::_update_search() {
 			}
 
 			desc += " )";
+
+			if (E->get().flags & METHOD_FLAG_CONST)
+				desc += " const";
+
+			if (E->get().flags & METHOD_FLAG_VIRTUAL)
+				desc += " virtual";
 
 			item->set_text(0, desc);
 			item->set_metadata(0, name);
@@ -347,23 +364,6 @@ void PropertySelector::_item_selected() {
 
 			at_class = ClassDB::get_parent_class(at_class);
 		}
-
-		if (text == String()) {
-
-			StringName setter;
-			StringName type;
-			if (ClassDB::get_setter_and_type_for_property(class_type, name, type, setter)) {
-				Map<String, DocData::ClassDoc>::Element *E = dd->class_list.find(type);
-				if (E) {
-					for (int i = 0; i < E->get().methods.size(); i++) {
-						if (E->get().methods[i].name == setter.operator String()) {
-							text = E->get().methods[i].description;
-						}
-					}
-				}
-			}
-		}
-
 	} else {
 
 		String at_class = class_type;
@@ -394,10 +394,12 @@ void PropertySelector::_notification(int p_what) {
 	if (p_what == NOTIFICATION_ENTER_TREE) {
 
 		connect("confirmed", this, "_confirmed");
+	} else if (p_what == NOTIFICATION_EXIT_TREE) {
+		disconnect("confirmed", this, "_confirmed");
 	}
 }
 
-void PropertySelector::select_method_from_base_type(const String &p_base, const String &p_current) {
+void PropertySelector::select_method_from_base_type(const String &p_base, const String &p_current, bool p_virtuals_only) {
 
 	base_type = p_base;
 	selected = p_current;
@@ -405,6 +407,7 @@ void PropertySelector::select_method_from_base_type(const String &p_base, const 
 	script = 0;
 	properties = false;
 	instance = NULL;
+	virtuals_only = p_virtuals_only;
 
 	popup_centered_ratio(0.6);
 	search_box->set_text("");
@@ -421,6 +424,7 @@ void PropertySelector::select_method_from_script(const Ref<Script> &p_script, co
 	script = p_script->get_instance_id();
 	properties = false;
 	instance = NULL;
+	virtuals_only = false;
 
 	popup_centered_ratio(0.6);
 	search_box->set_text("");
@@ -436,6 +440,7 @@ void PropertySelector::select_method_from_basic_type(Variant::Type p_type, const
 	script = 0;
 	properties = false;
 	instance = NULL;
+	virtuals_only = false;
 
 	popup_centered_ratio(0.6);
 	search_box->set_text("");
@@ -456,6 +461,7 @@ void PropertySelector::select_method_from_instance(Object *p_instance, const Str
 	}
 	properties = false;
 	instance = NULL;
+	virtuals_only = false;
 
 	popup_centered_ratio(0.6);
 	search_box->set_text("");
@@ -471,6 +477,7 @@ void PropertySelector::select_property_from_base_type(const String &p_base, cons
 	script = 0;
 	properties = true;
 	instance = NULL;
+	virtuals_only = false;
 
 	popup_centered_ratio(0.6);
 	search_box->set_text("");
@@ -488,12 +495,14 @@ void PropertySelector::select_property_from_script(const Ref<Script> &p_script, 
 	script = p_script->get_instance_id();
 	properties = true;
 	instance = NULL;
+	virtuals_only = false;
 
 	popup_centered_ratio(0.6);
 	search_box->set_text("");
 	search_box->grab_focus();
 	_update_search();
 }
+
 void PropertySelector::select_property_from_basic_type(Variant::Type p_type, const String &p_current) {
 
 	ERR_FAIL_COND(p_type == Variant::NIL);
@@ -503,6 +512,7 @@ void PropertySelector::select_property_from_basic_type(Variant::Type p_type, con
 	script = 0;
 	properties = true;
 	instance = NULL;
+	virtuals_only = false;
 
 	popup_centered_ratio(0.6);
 	search_box->set_text("");
@@ -518,11 +528,16 @@ void PropertySelector::select_property_from_instance(Object *p_instance, const S
 	script = 0;
 	properties = true;
 	instance = p_instance;
+	virtuals_only = false;
 
 	popup_centered_ratio(0.6);
 	search_box->set_text("");
 	search_box->grab_focus();
 	_update_search();
+}
+
+void PropertySelector::set_type_filter(const Vector<Variant::Type> &p_type_filter) {
+	type_filter = p_type_filter;
 }
 
 void PropertySelector::_bind_methods() {
@@ -554,6 +569,7 @@ PropertySelector::PropertySelector() {
 	search_options->connect("cell_selected", this, "_item_selected");
 	search_options->set_hide_root(true);
 	search_options->set_hide_folding(true);
+	virtuals_only = false;
 
 	help_bit = memnew(EditorHelpBit);
 	vbc->add_margin_child(TTR("Description:"), help_bit);

@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,7 +27,10 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "reference_rect.h"
+
+#include "core/engine.h"
 
 void ReferenceRect::_notification(int p_what) {
 
@@ -35,10 +38,26 @@ void ReferenceRect::_notification(int p_what) {
 
 		if (!is_inside_tree())
 			return;
-		if (get_tree()->is_editor_hint())
-			draw_style_box(get_stylebox("border"), Rect2(Point2(), get_size()));
+		if (Engine::get_singleton()->is_editor_hint())
+			draw_rect(Rect2(Point2(), get_size()), border_color, false);
 	}
 }
 
+void ReferenceRect::set_border_color(const Color &color) {
+	border_color = color;
+}
+
+Color ReferenceRect::get_border_color() const {
+	return border_color;
+}
+
+void ReferenceRect::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("get_border_color"), &ReferenceRect::get_border_color);
+	ClassDB::bind_method(D_METHOD("set_border_color", "color"), &ReferenceRect::set_border_color);
+
+	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "border_color"), "set_border_color", "get_border_color");
+}
+
 ReferenceRect::ReferenceRect() {
+	border_color = Color(1, 0, 0);
 }

@@ -3,12 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
-/*                                                                       */
-/* Author: George Marques <george@gmarqu.es>                             */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -33,11 +31,15 @@
 #ifndef AUDIO_STREAM_OPUS_H
 #define AUDIO_STREAM_OPUS_H
 
-#include "io/resource_loader.h"
-#include "os/file_access.h"
+#include "core/io/resource_loader.h"
+#include "core/os/file_access.h"
 #include "scene/resources/audio_stream.h"
 
 #include <opus/opusfile.h>
+
+/**
+	@author George Marques <george@gmarqu.es>
+*/
 
 class AudioStreamPlaybackOpus : public AudioStreamPlayback {
 
@@ -99,15 +101,15 @@ public:
 
 	virtual int get_loop_count() const { return repeats; }
 
-	virtual float get_pos() const;
-	virtual void seek_pos(float p_time);
+	virtual float get_playback_position() const;
+	virtual void seek(float p_time);
 
 	virtual int get_channels() const { return stream_channels; }
 	virtual int get_mix_rate() const { return osrate; }
 
 	virtual int get_minimum_buffer_size() const;
 
-	virtual int mix(int16_t *p_bufer, int p_frames);
+	virtual int mix(int16_t *p_buffer, int p_frames);
 
 	AudioStreamPlaybackOpus();
 	~AudioStreamPlaybackOpus();
@@ -130,6 +132,7 @@ public:
 };
 
 class ResourceFormatLoaderAudioStreamOpus : public ResourceFormatLoader {
+	GDCLASS(ResourceFormatLoaderAudioStreamOpus, ResourceFormatLoader)
 public:
 	virtual RES load(const String &p_path, const String &p_original_path = "", Error *r_error = NULL);
 	virtual void get_recognized_extensions(List<String> *p_extensions) const;

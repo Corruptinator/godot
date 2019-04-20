@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,7 +27,9 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "collision_object_sw.h"
+#include "servers/physics/physics_server_sw.h"
 #include "space_sw.h"
 
 void CollisionObjectSW::add_shape(ShapeSW *p_shape, const Transform &p_transform) {
@@ -39,28 +41,38 @@ void CollisionObjectSW::add_shape(ShapeSW *p_shape, const Transform &p_transform
 	s.bpid = 0; //needs update
 	shapes.push_back(s);
 	p_shape->add_owner(this);
-	_update_shapes();
-	_shapes_changed();
+
+	if (!pending_shape_update_list.in_list()) {
+		PhysicsServerSW::singleton->pending_shape_update_list.add(&pending_shape_update_list);
+	}
+	//_update_shapes();
+	//_shapes_changed();
 }
 
 void CollisionObjectSW::set_shape(int p_index, ShapeSW *p_shape) {
 
 	ERR_FAIL_INDEX(p_index, shapes.size());
 	shapes[p_index].shape->remove_owner(this);
-	shapes[p_index].shape = p_shape;
+	shapes.write[p_index].shape = p_shape;
 
 	p_shape->add_owner(this);
-	_update_shapes();
-	_shapes_changed();
+	if (!pending_shape_update_list.in_list()) {
+		PhysicsServerSW::singleton->pending_shape_update_list.add(&pending_shape_update_list);
+	}
+	//_update_shapes();
+	//_shapes_changed();
 }
 void CollisionObjectSW::set_shape_transform(int p_index, const Transform &p_transform) {
 
 	ERR_FAIL_INDEX(p_index, shapes.size());
 
-	shapes[p_index].xform = p_transform;
-	shapes[p_index].xform_inv = p_transform.affine_inverse();
-	_update_shapes();
-	_shapes_changed();
+	shapes.write[p_index].xform = p_transform;
+	shapes.write[p_index].xform_inv = p_transform.affine_inverse();
+	if (!pending_shape_update_list.in_list()) {
+		PhysicsServerSW::singleton->pending_shape_update_list.add(&pending_shape_update_list);
+	}
+	//_update_shapes();
+	//_shapes_changed();
 }
 
 void CollisionObjectSW::remove_shape(ShapeSW *p_shape) {
@@ -85,12 +97,16 @@ void CollisionObjectSW::remove_shape(int p_index) {
 			continue;
 		//should never get here with a null owner
 		space->get_broadphase()->remove(shapes[i].bpid);
-		shapes[i].bpid = 0;
+		shapes.write[i].bpid = 0;
 	}
 	shapes[p_index].shape->remove_owner(this);
 	shapes.remove(p_index);
 
-	_shapes_changed();
+	if (!pending_shape_update_list.in_list()) {
+		PhysicsServerSW::singleton->pending_shape_update_list.add(&pending_shape_update_list);
+	}
+	//_update_shapes();
+	//_shapes_changed();
 }
 
 void CollisionObjectSW::_set_static(bool p_static) {
@@ -101,7 +117,7 @@ void CollisionObjectSW::_set_static(bool p_static) {
 	if (!space)
 		return;
 	for (int i = 0; i < get_shape_count(); i++) {
-		Shape &s = shapes[i];
+		const Shape &s = shapes[i];
 		if (s.bpid > 0) {
 			space->get_broadphase()->set_static(s.bpid, _static);
 		}
@@ -112,7 +128,7 @@ void CollisionObjectSW::_unregister_shapes() {
 
 	for (int i = 0; i < shapes.size(); i++) {
 
-		Shape &s = shapes[i];
+		Shape &s = shapes.write[i];
 		if (s.bpid > 0) {
 			space->get_broadphase()->remove(s.bpid);
 			s.bpid = 0;
@@ -127,14 +143,14 @@ void CollisionObjectSW::_update_shapes() {
 
 	for (int i = 0; i < shapes.size(); i++) {
 
-		Shape &s = shapes[i];
+		Shape &s = shapes.write[i];
 		if (s.bpid == 0) {
 			s.bpid = space->get_broadphase()->create(this, i);
 			space->get_broadphase()->set_static(s.bpid, _static);
 		}
 
 		//not quite correct, should compute the next matrix..
-		Rect3 shape_aabb = s.shape->get_aabb();
+		AABB shape_aabb = s.shape->get_aabb();
 		Transform xform = transform * s.xform;
 		shape_aabb = xform.xform(shape_aabb);
 		s.aabb_cache = shape_aabb;
@@ -154,17 +170,17 @@ void CollisionObjectSW::_update_shapes_with_motion(const Vector3 &p_motion) {
 
 	for (int i = 0; i < shapes.size(); i++) {
 
-		Shape &s = shapes[i];
+		Shape &s = shapes.write[i];
 		if (s.bpid == 0) {
 			s.bpid = space->get_broadphase()->create(this, i);
 			space->get_broadphase()->set_static(s.bpid, _static);
 		}
 
 		//not quite correct, should compute the next matrix..
-		Rect3 shape_aabb = s.shape->get_aabb();
+		AABB shape_aabb = s.shape->get_aabb();
 		Transform xform = transform * s.xform;
 		shape_aabb = xform.xform(shape_aabb);
-		shape_aabb = shape_aabb.merge(Rect3(shape_aabb.position + p_motion, shape_aabb.size)); //use motion
+		shape_aabb = shape_aabb.merge(AABB(shape_aabb.position + p_motion, shape_aabb.size)); //use motion
 		s.aabb_cache = shape_aabb;
 
 		space->get_broadphase()->move(s.bpid, shape_aabb);
@@ -179,7 +195,7 @@ void CollisionObjectSW::_set_space(SpaceSW *p_space) {
 
 		for (int i = 0; i < shapes.size(); i++) {
 
-			Shape &s = shapes[i];
+			Shape &s = shapes.write[i];
 			if (s.bpid) {
 				space->get_broadphase()->remove(s.bpid);
 				s.bpid = 0;
@@ -202,7 +218,8 @@ void CollisionObjectSW::_shape_changed() {
 	_shapes_changed();
 }
 
-CollisionObjectSW::CollisionObjectSW(Type p_type) {
+CollisionObjectSW::CollisionObjectSW(Type p_type) :
+		pending_shape_update_list(this) {
 
 	_static = true;
 	type = p_type;

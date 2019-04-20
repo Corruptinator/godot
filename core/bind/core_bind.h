@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,18 +27,19 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef CORE_BIND_H
 #define CORE_BIND_H
 
-#include "image.h"
-#include "io/compression.h"
-#include "io/resource_loader.h"
-#include "io/resource_saver.h"
-#include "os/dir_access.h"
-#include "os/file_access.h"
-#include "os/power.h"
-#include "os/semaphore.h"
-#include "os/thread.h"
+#include "core/image.h"
+#include "core/io/compression.h"
+#include "core/io/resource_loader.h"
+#include "core/io/resource_saver.h"
+#include "core/os/dir_access.h"
+#include "core/os/file_access.h"
+#include "core/os/os.h"
+#include "core/os/semaphore.h"
+#include "core/os/thread.h"
 
 class _ResourceLoader : public Object {
 	GDCLASS(_ResourceLoader, Object);
@@ -54,7 +55,11 @@ public:
 	PoolVector<String> get_recognized_extensions_for_type(const String &p_type);
 	void set_abort_on_missing_resources(bool p_abort);
 	PoolStringArray get_dependencies(const String &p_path);
+#ifndef DISABLE_DEPRECATED
 	bool has(const String &p_path);
+#endif // DISABLE_DEPRECATED
+	bool has_cached(const String &p_path);
+	bool exists(const String &p_path, const String &p_type_hint = "");
 
 	_ResourceLoader();
 };
@@ -75,15 +80,18 @@ public:
 		FLAG_OMIT_EDITOR_PROPERTIES = 8,
 		FLAG_SAVE_BIG_ENDIAN = 16,
 		FLAG_COMPRESS = 32,
+		FLAG_REPLACE_SUBRESOURCE_PATHS = 64,
 	};
 
 	static _ResourceSaver *get_singleton() { return singleton; }
 
-	Error save(const String &p_path, const RES &p_resource, uint32_t p_flags);
+	Error save(const String &p_path, const RES &p_resource, SaverFlags p_flags);
 	PoolVector<String> get_recognized_extensions(const RES &p_resource);
 
 	_ResourceSaver();
 };
+
+VARIANT_ENUM_CAST(_ResourceSaver::SaverFlags);
 
 class MainLoop;
 
@@ -95,6 +103,19 @@ protected:
 	static _OS *singleton;
 
 public:
+	enum VideoDriver {
+		VIDEO_DRIVER_GLES3,
+		VIDEO_DRIVER_GLES2,
+	};
+
+	enum PowerState {
+		POWERSTATE_UNKNOWN, /**< cannot determine power status */
+		POWERSTATE_ON_BATTERY, /**< Not plugged in, running on the battery */
+		POWERSTATE_NO_BATTERY, /**< Plugged in, no battery available */
+		POWERSTATE_CHARGING, /**< Plugged in, charging battery */
+		POWERSTATE_CHARGED /**< Plugged in, battery charged */
+	};
+
 	enum Weekday {
 		DAY_SUNDAY,
 		DAY_MONDAY,
@@ -135,15 +156,28 @@ public:
 	bool is_video_mode_resizable(int p_screen = 0) const;
 	Array get_fullscreen_mode_list(int p_screen = 0) const;
 
+	virtual int get_video_driver_count() const;
+	virtual String get_video_driver_name(VideoDriver p_driver) const;
+	virtual VideoDriver get_current_video_driver() const;
+
+	virtual int get_audio_driver_count() const;
+	virtual String get_audio_driver_name(int p_driver) const;
+
+	virtual PoolStringArray get_connected_midi_inputs();
+	virtual void open_midi_inputs();
+	virtual void close_midi_inputs();
+
 	virtual int get_screen_count() const;
 	virtual int get_current_screen() const;
 	virtual void set_current_screen(int p_screen);
-	virtual Point2 get_screen_position(int p_screen = 0) const;
-	virtual Size2 get_screen_size(int p_screen = 0) const;
-	virtual int get_screen_dpi(int p_screen = 0) const;
+	virtual Point2 get_screen_position(int p_screen = -1) const;
+	virtual Size2 get_screen_size(int p_screen = -1) const;
+	virtual int get_screen_dpi(int p_screen = -1) const;
 	virtual Point2 get_window_position() const;
 	virtual void set_window_position(const Point2 &p_position);
 	virtual Size2 get_window_size() const;
+	virtual Size2 get_real_window_size() const;
+	virtual Rect2 get_window_safe_area() const;
 	virtual void set_window_size(const Size2 &p_size);
 	virtual void set_window_fullscreen(bool p_enabled);
 	virtual bool is_window_fullscreen() const;
@@ -153,12 +187,22 @@ public:
 	virtual bool is_window_minimized() const;
 	virtual void set_window_maximized(bool p_enabled);
 	virtual bool is_window_maximized() const;
+	virtual void set_window_always_on_top(bool p_enabled);
+	virtual bool is_window_always_on_top() const;
 	virtual void request_attention();
+	virtual void center_window();
+	virtual void move_window_to_foreground();
 
 	virtual void set_borderless_window(bool p_borderless);
 	virtual bool get_borderless_window() const;
 
+	virtual bool get_window_per_pixel_transparency_enabled() const;
+	virtual void set_window_per_pixel_transparency_enabled(bool p_enabled);
+
+	virtual void set_ime_active(const bool p_active);
 	virtual void set_ime_position(const Point2 &p_pos);
+	virtual Point2 get_ime_selection() const;
+	virtual String get_ime_text() const;
 
 	Error native_video_play(String p_path, float p_volume, String p_audio_track, String p_subtitle_track);
 	bool native_video_is_playing();
@@ -194,6 +238,7 @@ public:
 	bool has_virtual_keyboard() const;
 	void show_virtual_keyboard(const String &p_existing_text = "");
 	void hide_virtual_keyboard();
+	int get_virtual_keyboard_height();
 
 	void print_resources_in_use(bool p_short = false);
 	void print_all_resources(const String &p_to_file);
@@ -237,24 +282,28 @@ public:
 	Dictionary get_date(bool utc) const;
 	Dictionary get_time(bool utc) const;
 	Dictionary get_datetime(bool utc) const;
-	Dictionary get_datetime_from_unix_time(uint64_t unix_time_val) const;
-	uint64_t get_unix_time_from_datetime(Dictionary datetime) const;
+	Dictionary get_datetime_from_unix_time(int64_t unix_time_val) const;
+	int64_t get_unix_time_from_datetime(Dictionary datetime) const;
 	Dictionary get_time_zone_info() const;
 	uint64_t get_unix_time() const;
 	uint64_t get_system_time_secs() const;
+	uint64_t get_system_time_msecs() const;
 
-	int get_static_memory_usage() const;
-	int get_static_memory_peak_usage() const;
-	int get_dynamic_memory_usage() const;
+	uint64_t get_static_memory_usage() const;
+	uint64_t get_static_memory_peak_usage() const;
+	uint64_t get_dynamic_memory_usage() const;
 
 	void delay_usec(uint32_t p_usec) const;
 	void delay_msec(uint32_t p_msec) const;
 	uint32_t get_ticks_msec() const;
+	uint64_t get_ticks_usec() const;
 	uint32_t get_splash_tick_msec() const;
 
 	bool can_use_threads() const;
 
 	bool can_draw() const;
+
+	bool is_userfs_persistent() const;
 
 	bool is_stdout_verbose() const;
 
@@ -284,7 +333,7 @@ public:
 
 	String get_system_dir(SystemDir p_dir) const;
 
-	String get_data_dir() const;
+	String get_user_data_dir() const;
 
 	void alert(const String &p_alert, const String &p_title = "ALERT!");
 
@@ -305,11 +354,19 @@ public:
 	int get_power_seconds_left();
 	int get_power_percent_left();
 
+	bool has_feature(const String &p_feature) const;
+
+	bool request_permission(const String &p_name);
+
 	static _OS *get_singleton() { return singleton; }
 
 	_OS();
 };
 
+VARIANT_ENUM_CAST(_OS::VideoDriver);
+VARIANT_ENUM_CAST(_OS::PowerState);
+VARIANT_ENUM_CAST(_OS::Weekday);
+VARIANT_ENUM_CAST(_OS::Month);
 VARIANT_ENUM_CAST(_OS::SystemDir);
 VARIANT_ENUM_CAST(_OS::ScreenOrientation);
 
@@ -328,6 +385,7 @@ public:
 	PoolVector<Plane> build_cylinder_planes(float p_radius, float p_height, int p_sides, Vector3::Axis p_axis = Vector3::AXIS_Z);
 	PoolVector<Plane> build_capsule_planes(float p_radius, float p_height, int p_sides, int p_lats, Vector3::Axis p_axis = Vector3::AXIS_Z);
 	Variant segment_intersects_segment_2d(const Vector2 &p_from_a, const Vector2 &p_to_a, const Vector2 &p_from_b, const Vector2 &p_to_b);
+	Variant line_intersects_line_2d(const Vector2 &p_from_a, const Vector2 &p_dir_a, const Vector2 &p_from_b, const Vector2 &p_dir_b);
 	PoolVector<Vector2> get_closest_points_between_segments_2d(const Vector2 &p1, const Vector2 &q1, const Vector2 &p2, const Vector2 &q2);
 	PoolVector<Vector3> get_closest_points_between_segments(const Vector3 &p1, const Vector3 &p2, const Vector3 &q1, const Vector3 &q2);
 	Vector2 get_closest_point_to_segment_2d(const Vector2 &p_point, const Vector2 &p_a, const Vector2 &p_b);
@@ -345,6 +403,8 @@ public:
 	int get_uv84_normal_bit(const Vector3 &p_vector);
 
 	Vector<int> triangulate_polygon(const Vector<Vector2> &p_polygon);
+	Vector<Point2> convex_hull_2d(const Vector<Point2> &p_points);
+	Vector<Vector3> clip_polygon(const Vector<Vector3> &p_points, const Plane &p_plane);
 
 	Dictionary make_atlas(const Vector<Size2> &p_rects);
 
@@ -376,17 +436,20 @@ public:
 		COMPRESSION_GZIP = Compression::MODE_GZIP
 	};
 
-	Error open_encrypted(const String &p_path, int p_mode_flags, const Vector<uint8_t> &p_key);
-	Error open_encrypted_pass(const String &p_path, int p_mode_flags, const String &p_pass);
-	Error open_compressed(const String &p_path, int p_mode_flags, int p_compress_mode = 0);
+	Error open_encrypted(const String &p_path, ModeFlags p_mode_flags, const Vector<uint8_t> &p_key);
+	Error open_encrypted_pass(const String &p_path, ModeFlags p_mode_flags, const String &p_pass);
+	Error open_compressed(const String &p_path, ModeFlags p_mode_flags, CompressionMode p_compress_mode = COMPRESSION_FASTLZ);
 
-	Error open(const String &p_path, int p_mode_flags); ///< open a file
+	Error open(const String &p_path, ModeFlags p_mode_flags); ///< open a file
 	void close(); ///< close a file
 	bool is_open() const; ///< true when file is open
 
+	String get_path() const; /// returns the path for the current open file
+	String get_path_absolute() const; /// returns the absolute path for the current open file
+
 	void seek(int64_t p_position); ///< seek to a given position
 	void seek_end(int64_t p_position = 0); ///< seek from the end of file
-	int64_t get_pos() const; ///< get position in the file
+	int64_t get_position() const; ///< get position in the file
 	int64_t get_len() const; ///< get size of the file
 
 	bool eof_reached() const; ///< reading passed EOF
@@ -400,10 +463,11 @@ public:
 	double get_double() const;
 	real_t get_real() const;
 
-	Variant get_var() const;
+	Variant get_var(bool p_allow_objects = false) const;
 
 	PoolVector<uint8_t> get_buffer(int p_length) const; ///< get an array of bytes
 	String get_line() const;
+	Vector<String> get_csv_line(const String &p_delim = ",") const;
 	String get_as_text() const;
 	String get_md5(const String &p_path) const;
 	String get_sha256(const String &p_path) const;
@@ -429,15 +493,14 @@ public:
 
 	void store_string(const String &p_string);
 	void store_line(const String &p_string);
+	void store_csv_line(const Vector<String> &p_values, const String &p_delim = ",");
 
 	virtual void store_pascal_string(const String &p_string);
 	virtual String get_pascal_string();
 
-	Vector<String> get_csv_line(String delim = ",") const;
-
 	void store_buffer(const PoolVector<uint8_t> &p_buffer); ///< store an array of bytes
 
-	void store_var(const Variant &p_var);
+	void store_var(const Variant &p_var, bool p_full_objects = false);
 
 	bool file_exists(const String &p_name) const; ///< return true if a file exists
 
@@ -446,6 +509,9 @@ public:
 	_File();
 	virtual ~_File();
 };
+
+VARIANT_ENUM_CAST(_File::ModeFlags);
+VARIANT_ENUM_CAST(_File::CompressionMode);
 
 class _Directory : public Reference {
 
@@ -503,8 +569,8 @@ protected:
 public:
 	static _Marshalls *get_singleton();
 
-	String variant_to_base64(const Variant &p_var);
-	Variant base64_to_variant(const String &p_str);
+	String variant_to_base64(const Variant &p_var, bool p_full_objects = false);
+	Variant base64_to_variant(const String &p_str, bool p_allow_objects = false);
 
 	String raw_to_base64(const PoolVector<uint8_t> &p_arr);
 	PoolVector<uint8_t> base64_to_raw(const String &p_str);
@@ -566,10 +632,11 @@ public:
 
 		PRIORITY_LOW,
 		PRIORITY_NORMAL,
-		PRIORITY_HIGH
+		PRIORITY_HIGH,
+		PRIORITY_MAX
 	};
 
-	Error start(Object *p_instance, const StringName &p_method, const Variant &p_userdata = Variant(), int p_priority = PRIORITY_NORMAL);
+	Error start(Object *p_instance, const StringName &p_method, const Variant &p_userdata = Variant(), Priority p_priority = PRIORITY_NORMAL);
 	String get_id() const;
 	bool is_active() const;
 	Variant wait_to_finish();
@@ -577,6 +644,8 @@ public:
 	_Thread();
 	~_Thread();
 };
+
+VARIANT_ENUM_CAST(_Thread::Priority);
 
 class _ClassDB : public Object {
 
@@ -629,8 +698,11 @@ public:
 	void set_iterations_per_second(int p_ips);
 	int get_iterations_per_second() const;
 
+	void set_physics_jitter_fix(float p_threshold);
+	float get_physics_jitter_fix() const;
+
 	void set_target_fps(int p_fps);
-	float get_target_fps() const;
+	int get_target_fps() const;
 
 	float get_frames_per_second() const;
 
@@ -639,15 +711,70 @@ public:
 	void set_time_scale(float p_scale);
 	float get_time_scale();
 
-	String get_custom_level() const;
-
 	MainLoop *get_main_loop() const;
 
 	Dictionary get_version_info() const;
+	Dictionary get_author_info() const;
+	Array get_copyright_info() const;
+	Dictionary get_donor_info() const;
+	Dictionary get_license_info() const;
+	String get_license_text() const;
 
-	bool is_in_fixed_frame() const;
+	bool is_in_physics_frame() const;
+
+	bool has_singleton(const String &p_name) const;
+	Object *get_singleton_object(const String &p_name) const;
+
+	void set_editor_hint(bool p_enabled);
+	bool is_editor_hint() const;
 
 	_Engine();
+};
+
+class _JSON;
+
+class JSONParseResult : public Reference {
+	GDCLASS(JSONParseResult, Reference)
+
+	friend class _JSON;
+
+	Error error;
+	String error_string;
+	int error_line;
+
+	Variant result;
+
+protected:
+	static void _bind_methods();
+
+public:
+	void set_error(Error p_error);
+	Error get_error() const;
+
+	void set_error_string(const String &p_error_string);
+	String get_error_string() const;
+
+	void set_error_line(int p_error_line);
+	int get_error_line() const;
+
+	void set_result(const Variant &p_result);
+	Variant get_result() const;
+};
+
+class _JSON : public Object {
+	GDCLASS(_JSON, Object)
+
+protected:
+	static void _bind_methods();
+	static _JSON *singleton;
+
+public:
+	static _JSON *get_singleton() { return singleton; }
+
+	String print(const Variant &p_value, const String &p_indent = "", bool p_sort_keys = false);
+	Ref<JSONParseResult> parse(const String &p_json);
+
+	_JSON();
 };
 
 #endif // CORE_BIND_H

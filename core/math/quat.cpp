@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,9 +27,11 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "quat.h"
-#include "matrix3.h"
-#include "print_string.h"
+
+#include "core/math/basis.h"
+#include "core/print_string.h"
 
 // set_euler_xyz expects a vector containing the Euler angles in the format
 // (ax,ay,az), where ax is the angle of rotation around x axis,
@@ -88,7 +90,7 @@ void Quat::set_euler_yxz(const Vector3 &p_euler) {
 
 	set(sin_a1 * cos_a2 * sin_a3 + cos_a1 * sin_a2 * cos_a3,
 			sin_a1 * cos_a2 * cos_a3 - cos_a1 * sin_a2 * sin_a3,
-			-sin_a1 * sin_a2 * cos_a3 + cos_a1 * sin_a2 * sin_a3,
+			-sin_a1 * sin_a2 * cos_a3 + cos_a1 * cos_a2 * sin_a3,
 			sin_a1 * sin_a2 * sin_a3 + cos_a1 * cos_a2 * cos_a3);
 }
 
@@ -97,6 +99,9 @@ void Quat::set_euler_yxz(const Vector3 &p_euler) {
 // and similar for other axes.
 // This implementation uses YXZ convention (Z is the first rotation).
 Vector3 Quat::get_euler_yxz() const {
+#ifdef MATH_CHECKS
+	ERR_FAIL_COND_V(!is_normalized(), Vector3(0, 0, 0));
+#endif
 	Basis m(*this);
 	return m.get_euler_yxz();
 }
@@ -130,57 +135,21 @@ Quat Quat::normalized() const {
 }
 
 bool Quat::is_normalized() const {
-	return Math::is_equal_approx(length(), 1.0);
+	return Math::is_equal_approx(length_squared(), 1.0, UNIT_EPSILON); //use less epsilon
 }
 
 Quat Quat::inverse() const {
+#ifdef MATH_CHECKS
+	ERR_FAIL_COND_V(!is_normalized(), Quat());
+#endif
 	return Quat(-x, -y, -z, w);
 }
 
 Quat Quat::slerp(const Quat &q, const real_t &t) const {
-
-#if 0
-
-
-	Quat dst=q;
-	Quat src=*this;
-
-	src.normalize();
-	dst.normalize();
-
-	real_t cosine = dst.dot(src);
-
-	if (cosine < 0 && true) {
-		cosine = -cosine;
-		dst = -dst;
-	} else {
-		dst = dst;
-	}
-
-	if (Math::abs(cosine) < 1 - CMP_EPSILON) {
-		// Standard case (slerp)
-		real_t sine = Math::sqrt(1 - cosine*cosine);
-		real_t angle = Math::atan2(sine, cosine);
-		real_t inv_sine = 1.0 / sine;
-		real_t coeff_0 = Math::sin((1.0 - t) * angle) * inv_sine;
-		real_t coeff_1 = Math::sin(t * angle) * inv_sine;
-		Quat ret=  src * coeff_0 + dst * coeff_1;
-
-		return ret;
-	} else {
-		// There are two situations:
-		// 1. "rkP" and "q" are very close (cosine ~= +1), so we can do a linear
-		//    interpolation safely.
-		// 2. "rkP" and "q" are almost invedste of each other (cosine ~= -1), there
-		//    are an infinite number of possibilities interpolation. but we haven't
-		//    have method to fix this case, so just use linear interpolation here.
-		Quat ret =  src * (1.0 - t) + dst *t;
-		// taking the complement requires renormalisation
-		ret.normalize();
-		return ret;
-	}
-#else
-
+#ifdef MATH_CHECKS
+	ERR_FAIL_COND_V(!is_normalized(), Quat());
+	ERR_FAIL_COND_V(!q.is_normalized(), Quat());
+#endif
 	Quat to1;
 	real_t omega, cosom, sinom, scale0, scale1;
 
@@ -221,11 +190,13 @@ Quat Quat::slerp(const Quat &q, const real_t &t) const {
 			scale0 * y + scale1 * to1.y,
 			scale0 * z + scale1 * to1.z,
 			scale0 * w + scale1 * to1.w);
-#endif
 }
 
 Quat Quat::slerpni(const Quat &q, const real_t &t) const {
-
+#ifdef MATH_CHECKS
+	ERR_FAIL_COND_V(!is_normalized(), Quat());
+	ERR_FAIL_COND_V(!q.is_normalized(), Quat());
+#endif
 	const Quat &from = *this;
 
 	real_t dot = from.dot(q);
@@ -241,57 +212,13 @@ Quat Quat::slerpni(const Quat &q, const real_t &t) const {
 			invFactor * from.y + newFactor * q.y,
 			invFactor * from.z + newFactor * q.z,
 			invFactor * from.w + newFactor * q.w);
-
-#if 0
-	real_t         to1[4];
-	real_t        omega, cosom, sinom, scale0, scale1;
-
-
-	// calc cosine
-	cosom = x * q.x + y * q.y + z * q.z
-			+ w * q.w;
-
-
-	// adjust signs (if necessary)
-	if ( cosom <0.0 && false) {
-		cosom = -cosom;to1[0] = - q.x;
-		to1[1] = - q.y;
-		to1[2] = - q.z;
-		to1[3] = - q.w;
-	} else  {
-		to1[0] = q.x;
-		to1[1] = q.y;
-		to1[2] = q.z;
-		to1[3] = q.w;
-	}
-
-
-	// calculate coefficients
-
-	if ( (1.0 - cosom) > CMP_EPSILON ) {
-		// standard case (slerp)
-		omega = Math::acos(cosom);
-		sinom = Math::sin(omega);
-		scale0 = Math::sin((1.0 - t) * omega) / sinom;
-		scale1 = Math::sin(t * omega) / sinom;
-	} else {
-		// "from" and "to" quaternions are very close
-		//  ... so we can do a linear interpolation
-		scale0 = 1.0 - t;
-		scale1 = t;
-	}
-	// calculate final values
-	return Quat(
-		scale0 * x + scale1 * to1[0],
-		scale0 * y + scale1 * to1[1],
-		scale0 * z + scale1 * to1[2],
-		scale0 * w + scale1 * to1[3]
-	);
-#endif
 }
 
 Quat Quat::cubic_slerp(const Quat &q, const Quat &prep, const Quat &postq, const real_t &t) const {
-
+#ifdef MATH_CHECKS
+	ERR_FAIL_COND_V(!is_normalized(), Quat());
+	ERR_FAIL_COND_V(!q.is_normalized(), Quat());
+#endif
 	//the only way to do slerp :|
 	real_t t2 = (1.0 - t) * t * 2;
 	Quat sp = this->slerp(q, t);
@@ -304,7 +231,10 @@ Quat::operator String() const {
 	return String::num(x) + ", " + String::num(y) + ", " + String::num(z) + ", " + String::num(w);
 }
 
-Quat::Quat(const Vector3 &axis, const real_t &angle) {
+void Quat::set_axis_angle(const Vector3 &axis, const real_t &angle) {
+#ifdef MATH_CHECKS
+	ERR_FAIL_COND(!axis.is_normalized());
+#endif
 	real_t d = axis.length();
 	if (d == 0)
 		set(0, 0, 0, 0);

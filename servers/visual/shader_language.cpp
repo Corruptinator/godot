@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,9 +27,10 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "shader_language.h"
-#include "os/os.h"
-#include "print_string.h"
+#include "core/os/os.h"
+#include "core/print_string.h"
 static bool _is_text_char(CharType c) {
 
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
@@ -79,7 +80,11 @@ String ShaderLanguage::get_operator_text(Operator p_op) {
 		"|",
 		"^",
 		"~",
-		"++"
+		"++",
+		"--",
+		"?",
+		":",
+		"++",
 		"--",
 		"()",
 		"construct",
@@ -118,7 +123,15 @@ const char *ShaderLanguage::token_names[TK_MAX] = {
 	"TYPE_SAMPLER2D",
 	"TYPE_ISAMPLER2D",
 	"TYPE_USAMPLER2D",
+	"TYPE_SAMPLER2DARRAY",
+	"TYPE_ISAMPLER2DARRAY",
+	"TYPE_USAMPLER2DARRAY",
+	"TYPE_SAMPLER3D",
+	"TYPE_ISAMPLER3D",
+	"TYPE_USAMPLER3D",
 	"TYPE_SAMPLERCUBE",
+	"INTERPOLATION_FLAT",
+	"INTERPOLATION_SMOOTH",
 	"PRECISION_LOW",
 	"PRECISION_MID",
 	"PRECISION_HIGH",
@@ -165,6 +178,7 @@ const char *ShaderLanguage::token_names[TK_MAX] = {
 	"CF_BREAK",
 	"CF_CONTINUE",
 	"CF_RETURN",
+	"CF_DISCARD",
 	"BRACKET_OPEN",
 	"BRACKET_CLOSE",
 	"CURLY_BRACKET_OPEN",
@@ -248,7 +262,15 @@ const ShaderLanguage::KeyWord ShaderLanguage::keyword_list[] = {
 	{ TK_TYPE_SAMPLER2D, "sampler2D" },
 	{ TK_TYPE_ISAMPLER2D, "isampler2D" },
 	{ TK_TYPE_USAMPLER2D, "usampler2D" },
+	{ TK_TYPE_SAMPLER2DARRAY, "sampler2DArray" },
+	{ TK_TYPE_ISAMPLER2DARRAY, "isampler2DArray" },
+	{ TK_TYPE_USAMPLER2DARRAY, "usampler2DArray" },
+	{ TK_TYPE_SAMPLER3D, "sampler3D" },
+	{ TK_TYPE_ISAMPLER3D, "isampler3D" },
+	{ TK_TYPE_USAMPLER3D, "usampler3D" },
 	{ TK_TYPE_SAMPLERCUBE, "samplerCube" },
+	{ TK_INTERPOLATION_FLAT, "flat" },
+	{ TK_INTERPOLATION_SMOOTH, "smooth" },
 	{ TK_PRECISION_LOW, "lowp" },
 	{ TK_PRECISION_MID, "mediump" },
 	{ TK_PRECISION_HIGH, "highp" },
@@ -262,6 +284,7 @@ const ShaderLanguage::KeyWord ShaderLanguage::keyword_list[] = {
 	{ TK_CF_BREAK, "break" },
 	{ TK_CF_CONTINUE, "continue" },
 	{ TK_CF_RETURN, "return" },
+	{ TK_CF_DISCARD, "discard" },
 	{ TK_UNIFORM, "uniform" },
 	{ TK_VARYING, "varying" },
 	{ TK_ARG_IN, "in" },
@@ -325,6 +348,7 @@ ShaderLanguage::Token ShaderLanguage::_get_token() {
 
 						while (true) {
 							if (GETCHAR(0) == '\n') {
+								tk_line++;
 								char_idx++;
 								break;
 							}
@@ -501,14 +525,14 @@ ShaderLanguage::Token ShaderLanguage::_get_token() {
 					bool exponent_found = false;
 					bool hexa_found = false;
 					bool sign_found = false;
-					bool minus_exponent_found = false;
+					bool float_suffix_found = false;
 
 					String str;
 					int i = 0;
 
 					while (true) {
 						if (GETCHAR(i) == '.') {
-							if (period_found || exponent_found)
+							if (period_found || exponent_found || hexa_found || float_suffix_found)
 								return _make_token(TK_ERROR, "Invalid numeric constant");
 							period_found = true;
 						} else if (GETCHAR(i) == 'x') {
@@ -516,19 +540,22 @@ ShaderLanguage::Token ShaderLanguage::_get_token() {
 								return _make_token(TK_ERROR, "Invalid numeric constant");
 							hexa_found = true;
 						} else if (GETCHAR(i) == 'e') {
-							if (hexa_found || exponent_found)
+							if (hexa_found || exponent_found || float_suffix_found)
 								return _make_token(TK_ERROR, "Invalid numeric constant");
 							exponent_found = true;
+						} else if (GETCHAR(i) == 'f') {
+							if (hexa_found || exponent_found)
+								return _make_token(TK_ERROR, "Invalid numeric constant");
+							float_suffix_found = true;
 						} else if (_is_number(GETCHAR(i))) {
-							//all ok
+							if (float_suffix_found)
+								return _make_token(TK_ERROR, "Invalid numeric constant");
 						} else if (hexa_found && _is_hex(GETCHAR(i))) {
 
 						} else if ((GETCHAR(i) == '-' || GETCHAR(i) == '+') && exponent_found) {
 							if (sign_found)
 								return _make_token(TK_ERROR, "Invalid numeric constant");
 							sign_found = true;
-							if (GETCHAR(i) == '-')
-								minus_exponent_found = true;
 						} else
 							break;
 
@@ -536,21 +563,60 @@ ShaderLanguage::Token ShaderLanguage::_get_token() {
 						i++;
 					}
 
-					if (!_is_number(str[str.length() - 1]))
-						return _make_token(TK_ERROR, "Invalid numeric constant");
+					CharType last_char = str[str.length() - 1];
+
+					if (hexa_found) {
+						//hex integers eg."0xFF" or "0x12AB", etc - NOT supported yet
+						return _make_token(TK_ERROR, "Invalid (hexadecimal) numeric constant - Not supported");
+					} else if (period_found || exponent_found || float_suffix_found) {
+						//floats
+						if (period_found) {
+							if (float_suffix_found) {
+								//checks for eg "1.f" or "1.99f" notations
+								if (last_char != 'f') {
+									return _make_token(TK_ERROR, "Invalid (float) numeric constant");
+								}
+							} else {
+								//checks for eg. "1." or "1.99" notations
+								if (last_char != '.' && !_is_number(last_char)) {
+									return _make_token(TK_ERROR, "Invalid (float) numeric constant");
+								}
+							}
+						} else if (float_suffix_found) {
+							// if no period found the float suffix must be the last character, like in "2f" for "2.0"
+							if (last_char != 'f') {
+								return _make_token(TK_ERROR, "Invalid (float) numeric constant");
+							}
+						}
+
+						if (float_suffix_found) {
+							//strip the suffix
+							str = str.left(str.length() - 1);
+							//compensate reading cursor position
+							char_idx += 1;
+						}
+
+						if (!str.is_valid_float()) {
+							return _make_token(TK_ERROR, "Invalid (float) numeric constant");
+						}
+					} else {
+						//integers
+						if (!_is_number(last_char)) {
+							return _make_token(TK_ERROR, "Invalid (integer) numeric constant");
+						}
+						if (!str.is_valid_integer()) {
+							return _make_token(TK_ERROR, "Invalid numeric constant");
+						}
+					}
 
 					char_idx += str.length();
 					Token tk;
-					if (period_found || minus_exponent_found)
+					if (period_found || exponent_found || float_suffix_found)
 						tk.type = TK_REAL_CONSTANT;
 					else
 						tk.type = TK_INT_CONSTANT;
 
-					if (!str.is_valid_float()) {
-						return _make_token(TK_ERROR, "Invalid numeric constant");
-					}
-
-					tk.constant = str.to_double();
+					tk.constant = str.to_double(); //wont work with hex
 					tk.line = tk_line;
 
 					return tk;
@@ -598,6 +664,8 @@ ShaderLanguage::Token ShaderLanguage::_get_token() {
 	}
 	ERR_PRINT("BUG");
 	return Token();
+
+#undef GETCHAR
 }
 
 String ShaderLanguage::token_debug(const String &p_code) {
@@ -616,6 +684,30 @@ String ShaderLanguage::token_debug(const String &p_code) {
 	}
 
 	return output;
+}
+
+bool ShaderLanguage::is_token_variable_datatype(TokenType p_type) {
+	return (
+			p_type == TK_TYPE_VOID ||
+			p_type == TK_TYPE_BOOL ||
+			p_type == TK_TYPE_BVEC2 ||
+			p_type == TK_TYPE_BVEC3 ||
+			p_type == TK_TYPE_BVEC4 ||
+			p_type == TK_TYPE_INT ||
+			p_type == TK_TYPE_IVEC2 ||
+			p_type == TK_TYPE_IVEC3 ||
+			p_type == TK_TYPE_IVEC4 ||
+			p_type == TK_TYPE_UINT ||
+			p_type == TK_TYPE_UVEC2 ||
+			p_type == TK_TYPE_UVEC3 ||
+			p_type == TK_TYPE_UVEC4 ||
+			p_type == TK_TYPE_FLOAT ||
+			p_type == TK_TYPE_VEC2 ||
+			p_type == TK_TYPE_VEC3 ||
+			p_type == TK_TYPE_VEC4 ||
+			p_type == TK_TYPE_MAT2 ||
+			p_type == TK_TYPE_MAT3 ||
+			p_type == TK_TYPE_MAT4);
 }
 
 bool ShaderLanguage::is_token_datatype(TokenType p_type) {
@@ -644,12 +736,33 @@ bool ShaderLanguage::is_token_datatype(TokenType p_type) {
 			p_type == TK_TYPE_SAMPLER2D ||
 			p_type == TK_TYPE_ISAMPLER2D ||
 			p_type == TK_TYPE_USAMPLER2D ||
+			p_type == TK_TYPE_SAMPLER2DARRAY ||
+			p_type == TK_TYPE_ISAMPLER2DARRAY ||
+			p_type == TK_TYPE_USAMPLER2DARRAY ||
+			p_type == TK_TYPE_SAMPLER3D ||
+			p_type == TK_TYPE_ISAMPLER3D ||
+			p_type == TK_TYPE_USAMPLER3D ||
 			p_type == TK_TYPE_SAMPLERCUBE);
 }
 
 ShaderLanguage::DataType ShaderLanguage::get_token_datatype(TokenType p_type) {
 
 	return DataType(p_type - TK_TYPE_VOID);
+}
+
+bool ShaderLanguage::is_token_interpolation(TokenType p_type) {
+
+	return (
+			p_type == TK_INTERPOLATION_FLAT ||
+			p_type == TK_INTERPOLATION_SMOOTH);
+}
+
+ShaderLanguage::DataInterpolation ShaderLanguage::get_token_interpolation(TokenType p_type) {
+
+	if (p_type == TK_INTERPOLATION_FLAT)
+		return INTERPOLATION_FLAT;
+	else
+		return INTERPOLATION_SMOOTH;
 }
 
 bool ShaderLanguage::is_token_precision(TokenType p_type) {
@@ -697,6 +810,12 @@ String ShaderLanguage::get_datatype_name(DataType p_type) {
 		case TYPE_SAMPLER2D: return "sampler2D";
 		case TYPE_ISAMPLER2D: return "isampler2D";
 		case TYPE_USAMPLER2D: return "usampler2D";
+		case TYPE_SAMPLER2DARRAY: return "sampler2DArray";
+		case TYPE_ISAMPLER2DARRAY: return "isampler2DArray";
+		case TYPE_USAMPLER2DARRAY: return "usampler2DArray";
+		case TYPE_SAMPLER3D: return "sampler3D";
+		case TYPE_ISAMPLER3D: return "isampler3D";
+		case TYPE_USAMPLER3D: return "usampler3D";
 		case TYPE_SAMPLERCUBE: return "samplerCube";
 	}
 
@@ -728,12 +847,12 @@ void ShaderLanguage::clear() {
 	}
 }
 
-bool ShaderLanguage::_find_identifier(const BlockNode *p_block, const Map<StringName, DataType> &p_builtin_types, const StringName &p_identifier, DataType *r_data_type, IdentifierType *r_type) {
+bool ShaderLanguage::_find_identifier(const BlockNode *p_block, const Map<StringName, BuiltInInfo> &p_builtin_types, const StringName &p_identifier, DataType *r_data_type, IdentifierType *r_type) {
 
 	if (p_builtin_types.has(p_identifier)) {
 
 		if (r_data_type) {
-			*r_data_type = p_builtin_types[p_identifier];
+			*r_data_type = p_builtin_types[p_identifier].type;
 		}
 		if (r_type) {
 			*r_type = IDENTIFIER_BUILTIN_VAR;
@@ -1093,6 +1212,15 @@ bool ShaderLanguage::_validate_operator(OperatorNode *p_op, DataType *r_ret_type
 			} else if (p_op->op == OP_ASSIGN_MUL && na == TYPE_MAT4 && nb == TYPE_VEC4) {
 				valid = true;
 				ret_type = TYPE_MAT4;
+			} else if (p_op->op == OP_ASSIGN_MUL && na == TYPE_VEC2 && nb == TYPE_MAT2) {
+				valid = true;
+				ret_type = TYPE_VEC2;
+			} else if (p_op->op == OP_ASSIGN_MUL && na == TYPE_VEC3 && nb == TYPE_MAT3) {
+				valid = true;
+				ret_type = TYPE_VEC3;
+			} else if (p_op->op == OP_ASSIGN_MUL && na == TYPE_VEC4 && nb == TYPE_MAT4) {
+				valid = true;
+				ret_type = TYPE_VEC4;
 			}
 		} break;
 		case OP_ASSIGN_BIT_AND:
@@ -1344,17 +1472,91 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 	{ "bvec4", TYPE_BVEC4, { TYPE_UVEC4, TYPE_VOID } },
 	{ "bvec4", TYPE_BVEC4, { TYPE_VEC4, TYPE_VOID } },
 
+	//conversion between matrixes
+
+	{ "mat2", TYPE_MAT2, { TYPE_MAT3, TYPE_VOID } },
+	{ "mat2", TYPE_MAT2, { TYPE_MAT4, TYPE_VOID } },
+	{ "mat3", TYPE_MAT3, { TYPE_MAT2, TYPE_VOID } },
+	{ "mat3", TYPE_MAT3, { TYPE_MAT4, TYPE_VOID } },
+	{ "mat4", TYPE_MAT4, { TYPE_MAT2, TYPE_VOID } },
+	{ "mat4", TYPE_MAT4, { TYPE_MAT3, TYPE_VOID } },
+
 	//builtins - trigonometry
+
+	{ "radians", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "radians", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "radians", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "radians", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+
+	{ "degrees", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "degrees", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "degrees", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "degrees", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+
 	{ "sin", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "sin", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "sin", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "sin", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+
 	{ "cos", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "cos", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "cos", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "cos", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+
 	{ "tan", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "tan", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "tan", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "tan", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+
 	{ "asin", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "asin", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "asin", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "asin", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+
 	{ "acos", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "acos", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "acos", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "acos", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+
 	{ "atan", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
-	{ "atan2", TYPE_FLOAT, { TYPE_FLOAT, TYPE_FLOAT, TYPE_VOID } },
+	{ "atan", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "atan", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "atan", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+	{ "atan", TYPE_FLOAT, { TYPE_FLOAT, TYPE_FLOAT, TYPE_VOID } },
+	{ "atan", TYPE_VEC2, { TYPE_VEC2, TYPE_VEC2, TYPE_VOID } },
+	{ "atan", TYPE_VEC3, { TYPE_VEC3, TYPE_VEC3, TYPE_VOID } },
+	{ "atan", TYPE_VEC4, { TYPE_VEC4, TYPE_VEC4, TYPE_VOID } },
+
 	{ "sinh", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "sinh", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "sinh", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "sinh", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+
 	{ "cosh", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "cosh", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "cosh", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "cosh", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+
 	{ "tanh", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "tanh", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "tanh", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "tanh", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+
+	{ "asinh", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "asinh", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "asinh", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "asinh", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+
+	{ "acosh", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "acosh", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "acosh", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "acosh", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+
+	{ "atanh", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "atanh", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "atanh", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "atanh", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+
 	//builtins - exponential
 	{ "pow", TYPE_FLOAT, { TYPE_FLOAT, TYPE_FLOAT, TYPE_VOID } },
 	{ "pow", TYPE_VEC2, { TYPE_VEC2, TYPE_VEC2, TYPE_VOID } },
@@ -1368,10 +1570,22 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 	{ "log", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
 	{ "log", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
 	{ "log", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+	{ "exp2", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "exp2", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "exp2", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "exp2", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+	{ "log2", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "log2", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "log2", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "log2", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
 	{ "sqrt", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
 	{ "sqrt", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
 	{ "sqrt", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
 	{ "sqrt", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+	{ "inversesqrt", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "inversesqrt", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "inversesqrt", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "inversesqrt", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
 	//builtins - common
 	{ "abs", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
 	{ "abs", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
@@ -1382,11 +1596,6 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 	{ "abs", TYPE_IVEC2, { TYPE_IVEC2, TYPE_VOID } },
 	{ "abs", TYPE_IVEC3, { TYPE_IVEC3, TYPE_VOID } },
 	{ "abs", TYPE_IVEC4, { TYPE_IVEC4, TYPE_VOID } },
-
-	{ "abs", TYPE_UINT, { TYPE_UINT, TYPE_VOID } },
-	{ "abs", TYPE_UVEC2, { TYPE_UVEC2, TYPE_VOID } },
-	{ "abs", TYPE_UVEC3, { TYPE_UVEC3, TYPE_VOID } },
-	{ "abs", TYPE_UVEC4, { TYPE_UVEC4, TYPE_VOID } },
 
 	{ "sign", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
 	{ "sign", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
@@ -1410,6 +1619,10 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 	{ "round", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
 	{ "round", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
 	{ "round", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
+	{ "roundEven", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "roundEven", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "roundEven", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "roundEven", TYPE_VEC4, { TYPE_VEC4, TYPE_VOID } },
 	{ "ceil", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
 	{ "ceil", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
 	{ "ceil", TYPE_VEC3, { TYPE_VEC3, TYPE_VOID } },
@@ -1434,33 +1647,51 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 
 	{ "min", TYPE_FLOAT, { TYPE_FLOAT, TYPE_FLOAT, TYPE_VOID } },
 	{ "min", TYPE_VEC2, { TYPE_VEC2, TYPE_VEC2, TYPE_VOID } },
+	{ "min", TYPE_VEC2, { TYPE_VEC2, TYPE_FLOAT, TYPE_VOID } },
 	{ "min", TYPE_VEC3, { TYPE_VEC3, TYPE_VEC3, TYPE_VOID } },
+	{ "min", TYPE_VEC3, { TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
 	{ "min", TYPE_VEC4, { TYPE_VEC4, TYPE_VEC4, TYPE_VOID } },
+	{ "min", TYPE_VEC4, { TYPE_VEC4, TYPE_FLOAT, TYPE_VOID } },
 
 	{ "min", TYPE_INT, { TYPE_INT, TYPE_INT, TYPE_VOID } },
 	{ "min", TYPE_IVEC2, { TYPE_IVEC2, TYPE_IVEC2, TYPE_VOID } },
+	{ "min", TYPE_IVEC2, { TYPE_IVEC2, TYPE_INT, TYPE_VOID } },
 	{ "min", TYPE_IVEC3, { TYPE_IVEC3, TYPE_IVEC3, TYPE_VOID } },
+	{ "min", TYPE_IVEC3, { TYPE_IVEC3, TYPE_INT, TYPE_VOID } },
 	{ "min", TYPE_IVEC4, { TYPE_IVEC4, TYPE_IVEC4, TYPE_VOID } },
+	{ "min", TYPE_IVEC4, { TYPE_IVEC4, TYPE_INT, TYPE_VOID } },
 
 	{ "min", TYPE_UINT, { TYPE_UINT, TYPE_UINT, TYPE_VOID } },
 	{ "min", TYPE_UVEC2, { TYPE_UVEC2, TYPE_UVEC2, TYPE_VOID } },
+	{ "min", TYPE_UVEC2, { TYPE_UVEC2, TYPE_UINT, TYPE_VOID } },
 	{ "min", TYPE_UVEC3, { TYPE_UVEC3, TYPE_UVEC3, TYPE_VOID } },
+	{ "min", TYPE_UVEC3, { TYPE_UVEC3, TYPE_UINT, TYPE_VOID } },
 	{ "min", TYPE_UVEC4, { TYPE_UVEC4, TYPE_UVEC4, TYPE_VOID } },
+	{ "min", TYPE_UVEC4, { TYPE_UVEC4, TYPE_UINT, TYPE_VOID } },
 
 	{ "max", TYPE_FLOAT, { TYPE_FLOAT, TYPE_FLOAT, TYPE_VOID } },
 	{ "max", TYPE_VEC2, { TYPE_VEC2, TYPE_VEC2, TYPE_VOID } },
+	{ "max", TYPE_VEC2, { TYPE_VEC2, TYPE_FLOAT, TYPE_VOID } },
 	{ "max", TYPE_VEC3, { TYPE_VEC3, TYPE_VEC3, TYPE_VOID } },
+	{ "max", TYPE_VEC3, { TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
 	{ "max", TYPE_VEC4, { TYPE_VEC4, TYPE_VEC4, TYPE_VOID } },
+	{ "max", TYPE_VEC4, { TYPE_VEC4, TYPE_FLOAT, TYPE_VOID } },
 
 	{ "max", TYPE_INT, { TYPE_INT, TYPE_INT, TYPE_VOID } },
 	{ "max", TYPE_IVEC2, { TYPE_IVEC2, TYPE_IVEC2, TYPE_VOID } },
+	{ "max", TYPE_IVEC2, { TYPE_IVEC2, TYPE_INT, TYPE_VOID } },
 	{ "max", TYPE_IVEC3, { TYPE_IVEC3, TYPE_IVEC3, TYPE_VOID } },
+	{ "max", TYPE_IVEC3, { TYPE_IVEC3, TYPE_INT, TYPE_VOID } },
 	{ "max", TYPE_IVEC4, { TYPE_IVEC4, TYPE_IVEC4, TYPE_VOID } },
+	{ "max", TYPE_IVEC4, { TYPE_IVEC4, TYPE_INT, TYPE_VOID } },
 
 	{ "max", TYPE_UINT, { TYPE_UINT, TYPE_UINT, TYPE_VOID } },
 	{ "max", TYPE_UVEC2, { TYPE_UVEC2, TYPE_UVEC2, TYPE_VOID } },
+	{ "max", TYPE_UVEC2, { TYPE_UVEC2, TYPE_UINT, TYPE_VOID } },
 	{ "max", TYPE_UVEC3, { TYPE_UVEC3, TYPE_UVEC3, TYPE_VOID } },
+	{ "max", TYPE_UVEC3, { TYPE_UVEC3, TYPE_UINT, TYPE_VOID } },
 	{ "max", TYPE_UVEC4, { TYPE_UVEC4, TYPE_UVEC4, TYPE_VOID } },
+	{ "max", TYPE_UVEC4, { TYPE_UVEC4, TYPE_UINT, TYPE_VOID } },
 
 	{ "clamp", TYPE_FLOAT, { TYPE_FLOAT, TYPE_FLOAT, TYPE_FLOAT, TYPE_VOID } },
 	{ "clamp", TYPE_VEC2, { TYPE_VEC2, TYPE_VEC2, TYPE_VEC2, TYPE_VOID } },
@@ -1498,7 +1729,7 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 	{ "mix", TYPE_VEC3, { TYPE_VEC3, TYPE_VEC3, TYPE_VEC3, TYPE_VOID } },
 	{ "mix", TYPE_VEC4, { TYPE_VEC4, TYPE_VEC4, TYPE_FLOAT, TYPE_VOID } },
 	{ "mix", TYPE_VEC4, { TYPE_VEC4, TYPE_VEC4, TYPE_BOOL, TYPE_VOID } },
-	{ "mix", TYPE_VEC4, { TYPE_VEC4, TYPE_VEC4, TYPE_BVEC3, TYPE_VOID } },
+	{ "mix", TYPE_VEC4, { TYPE_VEC4, TYPE_VEC4, TYPE_BVEC4, TYPE_VOID } },
 	{ "mix", TYPE_VEC4, { TYPE_VEC4, TYPE_VEC4, TYPE_VEC4, TYPE_VOID } },
 
 	{ "step", TYPE_FLOAT, { TYPE_FLOAT, TYPE_FLOAT, TYPE_VOID } },
@@ -1517,24 +1748,24 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 	{ "smoothstep", TYPE_VEC4, { TYPE_FLOAT, TYPE_FLOAT, TYPE_VEC4, TYPE_VOID } },
 
 	{ "isnan", TYPE_BOOL, { TYPE_FLOAT, TYPE_VOID } },
-	{ "isnan", TYPE_BOOL, { TYPE_VEC2, TYPE_VOID } },
-	{ "isnan", TYPE_BOOL, { TYPE_VEC3, TYPE_VOID } },
-	{ "isnan", TYPE_BOOL, { TYPE_VEC4, TYPE_VOID } },
+	{ "isnan", TYPE_BVEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "isnan", TYPE_BVEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "isnan", TYPE_BVEC4, { TYPE_VEC4, TYPE_VOID } },
 
 	{ "isinf", TYPE_BOOL, { TYPE_FLOAT, TYPE_VOID } },
-	{ "isinf", TYPE_BOOL, { TYPE_VEC2, TYPE_VOID } },
-	{ "isinf", TYPE_BOOL, { TYPE_VEC3, TYPE_VOID } },
-	{ "isinf", TYPE_BOOL, { TYPE_VEC4, TYPE_VOID } },
+	{ "isinf", TYPE_BVEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "isinf", TYPE_BVEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "isinf", TYPE_BVEC4, { TYPE_VEC4, TYPE_VOID } },
 
 	{ "floatBitsToInt", TYPE_INT, { TYPE_FLOAT, TYPE_VOID } },
 	{ "floatBitsToInt", TYPE_IVEC2, { TYPE_VEC2, TYPE_VOID } },
 	{ "floatBitsToInt", TYPE_IVEC3, { TYPE_VEC3, TYPE_VOID } },
 	{ "floatBitsToInt", TYPE_IVEC4, { TYPE_VEC4, TYPE_VOID } },
 
-	{ "floatBitsToUInt", TYPE_UINT, { TYPE_FLOAT, TYPE_VOID } },
-	{ "floatBitsToUInt", TYPE_UVEC2, { TYPE_VEC2, TYPE_VOID } },
-	{ "floatBitsToUInt", TYPE_UVEC3, { TYPE_VEC3, TYPE_VOID } },
-	{ "floatBitsToUInt", TYPE_UVEC4, { TYPE_VEC4, TYPE_VOID } },
+	{ "floatBitsToUint", TYPE_UINT, { TYPE_FLOAT, TYPE_VOID } },
+	{ "floatBitsToUint", TYPE_UVEC2, { TYPE_VEC2, TYPE_VOID } },
+	{ "floatBitsToUint", TYPE_UVEC3, { TYPE_VEC3, TYPE_VOID } },
+	{ "floatBitsToUint", TYPE_UVEC4, { TYPE_VEC4, TYPE_VOID } },
 
 	{ "intBitsToFloat", TYPE_FLOAT, { TYPE_INT, TYPE_VOID } },
 	{ "intBitsToFloat", TYPE_VEC2, { TYPE_IVEC2, TYPE_VOID } },
@@ -1563,9 +1794,9 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 	{ "reflect", TYPE_VEC3, { TYPE_VEC3, TYPE_VEC3, TYPE_VOID } },
 	{ "refract", TYPE_VEC3, { TYPE_VEC3, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
 
-	{ "facefordward", TYPE_VEC2, { TYPE_VEC2, TYPE_VEC2, TYPE_VEC2, TYPE_VOID } },
-	{ "facefordward", TYPE_VEC3, { TYPE_VEC3, TYPE_VEC3, TYPE_VEC3, TYPE_VOID } },
-	{ "facefordward", TYPE_VEC4, { TYPE_VEC4, TYPE_VEC4, TYPE_VEC4, TYPE_VOID } },
+	{ "faceforward", TYPE_VEC2, { TYPE_VEC2, TYPE_VEC2, TYPE_VEC2, TYPE_VOID } },
+	{ "faceforward", TYPE_VEC3, { TYPE_VEC3, TYPE_VEC3, TYPE_VEC3, TYPE_VOID } },
+	{ "faceforward", TYPE_VEC4, { TYPE_VEC4, TYPE_VEC4, TYPE_VEC4, TYPE_VOID } },
 
 	{ "matrixCompMult", TYPE_MAT2, { TYPE_MAT2, TYPE_MAT2, TYPE_VOID } },
 	{ "matrixCompMult", TYPE_MAT3, { TYPE_MAT3, TYPE_MAT3, TYPE_VOID } },
@@ -1683,6 +1914,12 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 	{ "textureSize", TYPE_IVEC2, { TYPE_SAMPLER2D, TYPE_INT, TYPE_VOID } },
 	{ "textureSize", TYPE_IVEC2, { TYPE_ISAMPLER2D, TYPE_INT, TYPE_VOID } },
 	{ "textureSize", TYPE_IVEC2, { TYPE_USAMPLER2D, TYPE_INT, TYPE_VOID } },
+	{ "textureSize", TYPE_IVEC3, { TYPE_SAMPLER2DARRAY, TYPE_INT, TYPE_VOID } },
+	{ "textureSize", TYPE_IVEC3, { TYPE_ISAMPLER2DARRAY, TYPE_INT, TYPE_VOID } },
+	{ "textureSize", TYPE_IVEC3, { TYPE_USAMPLER2DARRAY, TYPE_INT, TYPE_VOID } },
+	{ "textureSize", TYPE_IVEC3, { TYPE_SAMPLER3D, TYPE_INT, TYPE_VOID } },
+	{ "textureSize", TYPE_IVEC3, { TYPE_ISAMPLER3D, TYPE_INT, TYPE_VOID } },
+	{ "textureSize", TYPE_IVEC3, { TYPE_USAMPLER3D, TYPE_INT, TYPE_VOID } },
 	{ "textureSize", TYPE_IVEC2, { TYPE_SAMPLERCUBE, TYPE_INT, TYPE_VOID } },
 
 	{ "texture", TYPE_VEC4, { TYPE_SAMPLER2D, TYPE_VEC2, TYPE_VOID } },
@@ -1693,6 +1930,24 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 
 	{ "texture", TYPE_IVEC4, { TYPE_ISAMPLER2D, TYPE_VEC2, TYPE_VOID } },
 	{ "texture", TYPE_IVEC4, { TYPE_ISAMPLER2D, TYPE_VEC2, TYPE_FLOAT, TYPE_VOID } },
+
+	{ "texture", TYPE_VEC4, { TYPE_SAMPLER2DARRAY, TYPE_VEC3, TYPE_VOID } },
+	{ "texture", TYPE_VEC4, { TYPE_SAMPLER2DARRAY, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
+
+	{ "texture", TYPE_UVEC4, { TYPE_USAMPLER2DARRAY, TYPE_VEC3, TYPE_VOID } },
+	{ "texture", TYPE_UVEC4, { TYPE_USAMPLER2DARRAY, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
+
+	{ "texture", TYPE_IVEC4, { TYPE_ISAMPLER2DARRAY, TYPE_VEC3, TYPE_VOID } },
+	{ "texture", TYPE_IVEC4, { TYPE_ISAMPLER2DARRAY, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
+
+	{ "texture", TYPE_VEC4, { TYPE_SAMPLER3D, TYPE_VEC3, TYPE_VOID } },
+	{ "texture", TYPE_VEC4, { TYPE_SAMPLER3D, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
+
+	{ "texture", TYPE_UVEC4, { TYPE_USAMPLER3D, TYPE_VEC3, TYPE_VOID } },
+	{ "texture", TYPE_UVEC4, { TYPE_USAMPLER3D, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
+
+	{ "texture", TYPE_IVEC4, { TYPE_ISAMPLER3D, TYPE_VEC3, TYPE_VOID } },
+	{ "texture", TYPE_IVEC4, { TYPE_ISAMPLER3D, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
 
 	{ "texture", TYPE_VEC4, { TYPE_SAMPLERCUBE, TYPE_VEC3, TYPE_VOID } },
 	{ "texture", TYPE_VEC4, { TYPE_SAMPLERCUBE, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
@@ -1712,14 +1967,37 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 	{ "textureProj", TYPE_UVEC4, { TYPE_USAMPLER2D, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
 	{ "textureProj", TYPE_UVEC4, { TYPE_USAMPLER2D, TYPE_VEC4, TYPE_FLOAT, TYPE_VOID } },
 
+	{ "textureProj", TYPE_VEC4, { TYPE_SAMPLER3D, TYPE_VEC4, TYPE_VOID } },
+	{ "textureProj", TYPE_VEC4, { TYPE_SAMPLER3D, TYPE_VEC4, TYPE_FLOAT, TYPE_VOID } },
+
+	{ "textureProj", TYPE_IVEC4, { TYPE_ISAMPLER3D, TYPE_VEC4, TYPE_VOID } },
+	{ "textureProj", TYPE_IVEC4, { TYPE_ISAMPLER3D, TYPE_VEC4, TYPE_FLOAT, TYPE_VOID } },
+
+	{ "textureProj", TYPE_UVEC4, { TYPE_USAMPLER3D, TYPE_VEC4, TYPE_VOID } },
+	{ "textureProj", TYPE_UVEC4, { TYPE_USAMPLER3D, TYPE_VEC4, TYPE_FLOAT, TYPE_VOID } },
+
 	{ "textureLod", TYPE_VEC4, { TYPE_SAMPLER2D, TYPE_VEC2, TYPE_FLOAT, TYPE_VOID } },
 	{ "textureLod", TYPE_IVEC4, { TYPE_ISAMPLER2D, TYPE_VEC2, TYPE_FLOAT, TYPE_VOID } },
 	{ "textureLod", TYPE_UVEC4, { TYPE_USAMPLER2D, TYPE_VEC2, TYPE_FLOAT, TYPE_VOID } },
+	{ "textureLod", TYPE_VEC4, { TYPE_SAMPLER2DARRAY, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
+	{ "textureLod", TYPE_IVEC4, { TYPE_ISAMPLER2DARRAY, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
+	{ "textureLod", TYPE_UVEC4, { TYPE_USAMPLER2DARRAY, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
+	{ "textureLod", TYPE_VEC4, { TYPE_SAMPLER3D, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
+	{ "textureLod", TYPE_IVEC4, { TYPE_ISAMPLER3D, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
+	{ "textureLod", TYPE_UVEC4, { TYPE_USAMPLER3D, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
 	{ "textureLod", TYPE_VEC4, { TYPE_SAMPLERCUBE, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
 
 	{ "texelFetch", TYPE_VEC4, { TYPE_SAMPLER2D, TYPE_IVEC2, TYPE_INT, TYPE_VOID } },
 	{ "texelFetch", TYPE_IVEC4, { TYPE_ISAMPLER2D, TYPE_IVEC2, TYPE_INT, TYPE_VOID } },
 	{ "texelFetch", TYPE_UVEC4, { TYPE_USAMPLER2D, TYPE_IVEC2, TYPE_INT, TYPE_VOID } },
+
+	{ "texelFetch", TYPE_VEC4, { TYPE_SAMPLER2DARRAY, TYPE_IVEC3, TYPE_INT, TYPE_VOID } },
+	{ "texelFetch", TYPE_IVEC4, { TYPE_ISAMPLER2DARRAY, TYPE_IVEC3, TYPE_INT, TYPE_VOID } },
+	{ "texelFetch", TYPE_UVEC4, { TYPE_USAMPLER2DARRAY, TYPE_IVEC3, TYPE_INT, TYPE_VOID } },
+
+	{ "texelFetch", TYPE_VEC4, { TYPE_SAMPLER3D, TYPE_IVEC3, TYPE_INT, TYPE_VOID } },
+	{ "texelFetch", TYPE_IVEC4, { TYPE_ISAMPLER3D, TYPE_IVEC3, TYPE_INT, TYPE_VOID } },
+	{ "texelFetch", TYPE_UVEC4, { TYPE_USAMPLER3D, TYPE_IVEC3, TYPE_INT, TYPE_VOID } },
 
 	{ "textureProjLod", TYPE_VEC4, { TYPE_SAMPLER2D, TYPE_VEC3, TYPE_FLOAT, TYPE_VOID } },
 	{ "textureProjLod", TYPE_VEC4, { TYPE_SAMPLER2D, TYPE_VEC4, TYPE_FLOAT, TYPE_VOID } },
@@ -1733,9 +2011,13 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 	{ "textureGrad", TYPE_VEC4, { TYPE_SAMPLER2D, TYPE_VEC2, TYPE_VEC2, TYPE_VEC2, TYPE_VOID } },
 	{ "textureGrad", TYPE_IVEC4, { TYPE_ISAMPLER2D, TYPE_VEC2, TYPE_VEC2, TYPE_VEC2, TYPE_VOID } },
 	{ "textureGrad", TYPE_UVEC4, { TYPE_USAMPLER2D, TYPE_VEC2, TYPE_VEC2, TYPE_VEC2, TYPE_VOID } },
+	{ "textureGrad", TYPE_VEC4, { TYPE_SAMPLER2DARRAY, TYPE_VEC3, TYPE_VEC2, TYPE_VEC2, TYPE_VOID } },
+	{ "textureGrad", TYPE_IVEC4, { TYPE_ISAMPLER2DARRAY, TYPE_VEC3, TYPE_VEC2, TYPE_VEC2, TYPE_VOID } },
+	{ "textureGrad", TYPE_UVEC4, { TYPE_USAMPLER2DARRAY, TYPE_VEC3, TYPE_VEC2, TYPE_VEC2, TYPE_VOID } },
+	{ "textureGrad", TYPE_VEC4, { TYPE_SAMPLER3D, TYPE_VEC3, TYPE_VEC3, TYPE_VEC3, TYPE_VOID } },
+	{ "textureGrad", TYPE_IVEC4, { TYPE_ISAMPLER3D, TYPE_VEC3, TYPE_VEC3, TYPE_VEC3, TYPE_VOID } },
+	{ "textureGrad", TYPE_UVEC4, { TYPE_USAMPLER3D, TYPE_VEC3, TYPE_VEC3, TYPE_VEC3, TYPE_VOID } },
 	{ "textureGrad", TYPE_VEC4, { TYPE_SAMPLERCUBE, TYPE_VEC3, TYPE_VEC3, TYPE_VEC3, TYPE_VOID } },
-
-	{ "textureScreen", TYPE_VEC4, { TYPE_VEC2, TYPE_VOID } },
 
 	{ "dFdx", TYPE_FLOAT, { TYPE_FLOAT, TYPE_VOID } },
 	{ "dFdx", TYPE_VEC2, { TYPE_VEC2, TYPE_VOID } },
@@ -1756,6 +2038,12 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 
 };
 
+const ShaderLanguage::BuiltinFuncOutArgs ShaderLanguage::builtin_func_out_args[] = {
+	//constructors
+	{ "modf", 1 },
+	{ NULL, 0 }
+};
+
 bool ShaderLanguage::_validate_function_call(BlockNode *p_block, OperatorNode *p_func, DataType *r_ret_type) {
 
 	ERR_FAIL_COND_V(p_func->op != OP_CALL && p_func->op != OP_CONSTRUCT, NULL);
@@ -1766,10 +2054,7 @@ bool ShaderLanguage::_validate_function_call(BlockNode *p_block, OperatorNode *p
 
 	StringName name = static_cast<VariableNode *>(p_func->arguments[0])->name.operator String();
 
-	bool all_const = true;
 	for (int i = 1; i < p_func->arguments.size(); i++) {
-		if (p_func->arguments[i]->type != Node::TYPE_CONSTANT)
-			all_const = false;
 		args.push_back(p_func->arguments[i]->get_datatype());
 	}
 
@@ -1790,7 +2075,7 @@ bool ShaderLanguage::_validate_function_call(BlockNode *p_block, OperatorNode *p
 				for (int i = 0; i < argcount; i++) {
 
 					if (get_scalar_type(args[i]) == args[i] && p_func->arguments[i + 1]->type == Node::TYPE_CONSTANT && convert_constant(static_cast<ConstantNode *>(p_func->arguments[i + 1]), builtin_func_defs[idx].args[i])) {
-						//all good
+						//all good, but needs implicit conversion later
 					} else if (args[i] != builtin_func_defs[idx].args[i]) {
 						fail = true;
 						break;
@@ -1801,6 +2086,59 @@ bool ShaderLanguage::_validate_function_call(BlockNode *p_block, OperatorNode *p
 					fail = true; //make sure the number of arguments matches
 
 				if (!fail) {
+
+					//make sure its not an out argument used in the wrong way
+					int outarg_idx = 0;
+					while (builtin_func_out_args[outarg_idx].name) {
+
+						if (String(name) == builtin_func_out_args[outarg_idx].name) {
+							int arg_idx = builtin_func_out_args[outarg_idx].argument;
+
+							if (arg_idx < argcount) {
+
+								if (p_func->arguments[arg_idx + 1]->type != Node::TYPE_VARIABLE) {
+									_set_error("Argument " + itos(arg_idx + 1) + " of function '" + String(name) + "' is not a variable");
+									return false;
+								}
+								StringName var_name = static_cast<const VariableNode *>(p_func->arguments[arg_idx + 1])->name;
+
+								const BlockNode *b = p_block;
+								bool valid = false;
+								while (b) {
+									if (b->variables.has(var_name)) {
+										valid = true;
+										break;
+									}
+									b = b->parent_block;
+								}
+
+								if (!valid) {
+									_set_error("Argument " + itos(arg_idx + 1) + " of function '" + String(name) + "' can only take a local variable");
+									return false;
+								}
+							}
+						}
+
+						outarg_idx++;
+					}
+					//implicitly convert values if possible
+					for (int i = 0; i < argcount; i++) {
+
+						if (get_scalar_type(args[i]) != args[i] || args[i] == builtin_func_defs[idx].args[i] || p_func->arguments[i + 1]->type != Node::TYPE_CONSTANT) {
+							//can't do implicit conversion here
+							continue;
+						}
+
+						//this is an implicit conversion
+						ConstantNode *constant = static_cast<ConstantNode *>(p_func->arguments[i + 1]);
+						ConstantNode *conversion = alloc_node<ConstantNode>();
+
+						conversion->datatype = builtin_func_defs[idx].args[i];
+						conversion->values.resize(1);
+
+						convert_constant(constant, builtin_func_defs[idx].args[i], conversion->values.ptrw());
+						p_func->arguments.write[i + 1] = conversion;
+					}
 
 					if (r_ret_type)
 						*r_ret_type = builtin_func_defs[idx].rettype;
@@ -1829,62 +2167,6 @@ bool ShaderLanguage::_validate_function_call(BlockNode *p_block, OperatorNode *p
 		return false;
 	}
 
-#if 0
-	if (found_builtin) {
-
-		if (p_func->op==OP_CONSTRUCT && all_const) {
-
-
-			Vector<float> cdata;
-			for(int i=0;i<argcount;i++) {
-
-				Variant v = static_cast<ConstantNode*>(p_func->arguments[i+1])->value;
-				switch(v.get_type()) {
-
-					case Variant::REAL: cdata.push_back(v); break;
-					case Variant::INT: cdata.push_back(v); break;
-					case Variant::VECTOR2: { Vector2 v2=v; cdata.push_back(v2.x); cdata.push_back(v2.y); } break;
-					case Variant::VECTOR3: { Vector3 v3=v; cdata.push_back(v3.x); cdata.push_back(v3.y); cdata.push_back(v3.z);} break;
-					case Variant::PLANE: { Plane v4=v; cdata.push_back(v4.normal.x); cdata.push_back(v4.normal.y); cdata.push_back(v4.normal.z); cdata.push_back(v4.d); } break;
-					default: ERR_FAIL_V(NULL);
-
-				}
-
-			}
-
-			ConstantNode *cn = parser.create_node<ConstantNode>(p_func->parent);
-			Variant data;
-			switch(p_func->return_cache) {
-				case TYPE_FLOAT: data = cdata[0]; break;
-				case TYPE_VEC2:
-					if (cdata.size()==1)
-						data = Vector2(cdata[0],cdata[0]);
-					else
-						data = Vector2(cdata[0],cdata[1]);
-
-					break;
-				case TYPE_VEC3:
-					if (cdata.size()==1)
-						data = Vector3(cdata[0],cdata[0],cdata[0]);
-					else
-						data = Vector3(cdata[0],cdata[1],cdata[2]);
-					break;
-				case TYPE_VEC4:
-					if (cdata.size()==1)
-						data = Plane(cdata[0],cdata[0],cdata[0],cdata[0]);
-					else
-						data = Plane(cdata[0],cdata[1],cdata[2],cdata[3]);
-					break;
-			}
-
-			cn->datatype=p_func->return_cache;
-			cn->value=data;
-			return cn;
-
-		}
-		return p_func;
-	}
-#endif
 	// try existing functions..
 
 	StringName exclude_function;
@@ -1920,18 +2202,39 @@ bool ShaderLanguage::_validate_function_call(BlockNode *p_block, OperatorNode *p
 
 		bool fail = false;
 
-		for (int i = 0; i < args.size(); i++) {
+		for (int j = 0; j < args.size(); j++) {
 
-			if (get_scalar_type(args[i]) == args[i] && p_func->arguments[i + 1]->type == Node::TYPE_CONSTANT && convert_constant(static_cast<ConstantNode *>(p_func->arguments[i + 1]), pfunc->arguments[i].type)) {
-				//all good
-			} else if (args[i] != pfunc->arguments[i].type) {
+			if (get_scalar_type(args[j]) == args[j] && p_func->arguments[j + 1]->type == Node::TYPE_CONSTANT && convert_constant(static_cast<ConstantNode *>(p_func->arguments[j + 1]), pfunc->arguments[j].type)) {
+				//all good, but it needs implicit conversion later
+			} else if (args[j] != pfunc->arguments[j].type) {
 				fail = true;
 				break;
 			}
 		}
 
 		if (!fail) {
-			p_func->return_cache = pfunc->return_type;
+
+			//implicitly convert values if possible
+			for (int k = 0; k < args.size(); k++) {
+
+				if (get_scalar_type(args[k]) != args[k] || args[k] == pfunc->arguments[k].type || p_func->arguments[k + 1]->type != Node::TYPE_CONSTANT) {
+					//can't do implicit conversion here
+					continue;
+				}
+
+				//this is an implicit conversion
+				ConstantNode *constant = static_cast<ConstantNode *>(p_func->arguments[k + 1]);
+				ConstantNode *conversion = alloc_node<ConstantNode>();
+
+				conversion->datatype = pfunc->arguments[k].type;
+				conversion->values.resize(1);
+
+				convert_constant(constant, pfunc->arguments[k].type, conversion->values.ptrw());
+				p_func->arguments.write[k + 1] = conversion;
+			}
+
+			if (r_ret_type)
+				*r_ret_type = pfunc->return_type;
 			return true;
 		}
 	}
@@ -1939,7 +2242,7 @@ bool ShaderLanguage::_validate_function_call(BlockNode *p_block, OperatorNode *p
 	return false;
 }
 
-bool ShaderLanguage::_parse_function_arguments(BlockNode *p_block, const Map<StringName, DataType> &p_builtin_types, OperatorNode *p_func, int *r_complete_arg) {
+bool ShaderLanguage::_parse_function_arguments(BlockNode *p_block, const Map<StringName, BuiltInInfo> &p_builtin_types, OperatorNode *p_func, int *r_complete_arg) {
 
 	TkPos pos = _get_tkpos();
 	Token tk = _get_token();
@@ -2077,7 +2380,119 @@ bool ShaderLanguage::is_scalar_type(DataType p_type) {
 
 bool ShaderLanguage::is_sampler_type(DataType p_type) {
 
-	return p_type == TYPE_SAMPLER2D || p_type == TYPE_ISAMPLER2D || p_type == TYPE_USAMPLER2D || p_type == TYPE_SAMPLERCUBE;
+	return p_type == TYPE_SAMPLER2D ||
+		   p_type == TYPE_ISAMPLER2D ||
+		   p_type == TYPE_USAMPLER2D ||
+		   p_type == TYPE_SAMPLER2DARRAY ||
+		   p_type == TYPE_ISAMPLER2DARRAY ||
+		   p_type == TYPE_USAMPLER2DARRAY ||
+		   p_type == TYPE_SAMPLER3D ||
+		   p_type == TYPE_ISAMPLER3D ||
+		   p_type == TYPE_USAMPLER3D ||
+		   p_type == TYPE_SAMPLERCUBE;
+}
+
+Variant ShaderLanguage::constant_value_to_variant(const Vector<ShaderLanguage::ConstantNode::Value> &p_value, DataType p_type, ShaderLanguage::ShaderNode::Uniform::Hint p_hint) {
+	if (p_value.size() > 0) {
+		Variant value;
+		switch (p_type) {
+			case ShaderLanguage::TYPE_BOOL:
+				value = Variant(p_value[0].boolean);
+				break;
+			case ShaderLanguage::TYPE_BVEC2:
+			case ShaderLanguage::TYPE_BVEC3:
+			case ShaderLanguage::TYPE_BVEC4:
+			case ShaderLanguage::TYPE_INT:
+				value = Variant(p_value[0].sint);
+				break;
+			case ShaderLanguage::TYPE_IVEC2:
+				value = Variant(Vector2(p_value[0].sint, p_value[1].sint));
+				break;
+			case ShaderLanguage::TYPE_IVEC3:
+				value = Variant(Vector3(p_value[0].sint, p_value[1].sint, p_value[2].sint));
+				break;
+			case ShaderLanguage::TYPE_IVEC4:
+				value = Variant(Plane(p_value[0].sint, p_value[1].sint, p_value[2].sint, p_value[3].sint));
+				break;
+			case ShaderLanguage::TYPE_UINT:
+				value = Variant(p_value[0].uint);
+				break;
+			case ShaderLanguage::TYPE_UVEC2:
+				value = Variant(Vector2(p_value[0].uint, p_value[1].uint));
+				break;
+			case ShaderLanguage::TYPE_UVEC3:
+				value = Variant(Vector3(p_value[0].uint, p_value[1].uint, p_value[2].uint));
+				break;
+			case ShaderLanguage::TYPE_UVEC4:
+				value = Variant(Plane(p_value[0].uint, p_value[1].uint, p_value[2].uint, p_value[3].uint));
+				break;
+			case ShaderLanguage::TYPE_FLOAT:
+				value = Variant(p_value[0].real);
+				break;
+			case ShaderLanguage::TYPE_VEC2:
+				value = Variant(Vector2(p_value[0].real, p_value[1].real));
+				break;
+			case ShaderLanguage::TYPE_VEC3:
+				value = Variant(Vector3(p_value[0].real, p_value[1].real, p_value[2].real));
+				break;
+			case ShaderLanguage::TYPE_VEC4:
+				if (p_hint == ShaderLanguage::ShaderNode::Uniform::HINT_COLOR) {
+					value = Variant(Color(p_value[0].real, p_value[1].real, p_value[2].real, p_value[3].real));
+				} else {
+					value = Variant(Plane(p_value[0].real, p_value[1].real, p_value[2].real, p_value[3].real));
+				}
+				break;
+			case ShaderLanguage::TYPE_MAT2:
+				value = Variant(Transform2D(p_value[0].real, p_value[2].real, p_value[1].real, p_value[3].real, 0.0, 0.0));
+				break;
+			case ShaderLanguage::TYPE_MAT3: {
+				Basis p;
+				p[0][0] = p_value[0].real;
+				p[0][1] = p_value[1].real;
+				p[0][2] = p_value[2].real;
+				p[1][0] = p_value[3].real;
+				p[1][1] = p_value[4].real;
+				p[1][2] = p_value[5].real;
+				p[2][0] = p_value[6].real;
+				p[2][1] = p_value[7].real;
+				p[2][2] = p_value[8].real;
+				value = Variant(p);
+				break;
+			}
+			case ShaderLanguage::TYPE_MAT4: {
+				Basis p;
+				p[0][0] = p_value[0].real;
+				p[0][1] = p_value[1].real;
+				p[0][2] = p_value[2].real;
+				p[1][0] = p_value[4].real;
+				p[1][1] = p_value[5].real;
+				p[1][2] = p_value[6].real;
+				p[2][0] = p_value[8].real;
+				p[2][1] = p_value[9].real;
+				p[2][2] = p_value[10].real;
+				Transform t = Transform(p, Vector3(p_value[3].real, p_value[7].real, p_value[11].real));
+				value = Variant(t);
+				break;
+			}
+			case ShaderLanguage::TYPE_ISAMPLER2DARRAY:
+			case ShaderLanguage::TYPE_ISAMPLER2D:
+			case ShaderLanguage::TYPE_ISAMPLER3D:
+			case ShaderLanguage::TYPE_SAMPLER2DARRAY:
+			case ShaderLanguage::TYPE_SAMPLER2D:
+			case ShaderLanguage::TYPE_SAMPLER3D:
+			case ShaderLanguage::TYPE_USAMPLER2DARRAY:
+			case ShaderLanguage::TYPE_USAMPLER2D:
+			case ShaderLanguage::TYPE_USAMPLER3D:
+			case ShaderLanguage::TYPE_SAMPLERCUBE: {
+				// Texture types, likely not relevant here.
+				break;
+			}
+			case ShaderLanguage::TYPE_VOID:
+				break;
+		}
+		return value;
+	}
+	return Variant();
 }
 
 void ShaderLanguage::get_keyword_list(List<String> *r_keywords) {
@@ -2156,11 +2571,42 @@ ShaderLanguage::DataType ShaderLanguage::get_scalar_type(DataType p_type) {
 	return scalar_types[p_type];
 }
 
+int ShaderLanguage::get_cardinality(DataType p_type) {
+	static const int cardinality_table[] = {
+		0,
+		1,
+		2,
+		3,
+		4,
+		1,
+		2,
+		3,
+		4,
+		1,
+		2,
+		3,
+		4,
+		1,
+		2,
+		3,
+		4,
+		4,
+		9,
+		16,
+		1,
+		1,
+		1,
+		1,
+	};
+
+	return cardinality_table[p_type];
+}
+
 bool ShaderLanguage::_get_completable_identifier(BlockNode *p_block, CompletionType p_type, StringName &identifier) {
 
 	identifier = StringName();
 
-	TkPos pos;
+	TkPos pos = { 0, 0 };
 
 	Token tk = _get_token();
 
@@ -2192,7 +2638,78 @@ bool ShaderLanguage::_get_completable_identifier(BlockNode *p_block, CompletionT
 	return false;
 }
 
-ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, const Map<StringName, DataType> &p_builtin_types) {
+bool ShaderLanguage::_is_operator_assign(Operator p_op) const {
+	switch (p_op) {
+		case OP_ASSIGN:
+		case OP_ASSIGN_ADD:
+		case OP_ASSIGN_SUB:
+		case OP_ASSIGN_MUL:
+		case OP_ASSIGN_DIV:
+		case OP_ASSIGN_MOD:
+		case OP_ASSIGN_SHIFT_LEFT:
+		case OP_ASSIGN_SHIFT_RIGHT:
+		case OP_ASSIGN_BIT_AND:
+		case OP_ASSIGN_BIT_OR:
+		case OP_ASSIGN_BIT_XOR:
+			return true;
+		default:
+			return false;
+	}
+
+	return false;
+}
+
+bool ShaderLanguage::_validate_assign(Node *p_node, const Map<StringName, BuiltInInfo> &p_builtin_types, String *r_message) {
+
+	if (p_node->type == Node::TYPE_OPERATOR) {
+
+		OperatorNode *op = static_cast<OperatorNode *>(p_node);
+
+		if (op->op == OP_INDEX) {
+			return _validate_assign(op->arguments[0], p_builtin_types, r_message);
+
+		} else if (_is_operator_assign(op->op)) {
+			//chained assignment
+			return _validate_assign(op->arguments[1], p_builtin_types, r_message);
+
+		} else if (op->op == OP_CALL) {
+			if (r_message)
+				*r_message = RTR("Assignment to function.");
+			return false;
+		}
+
+	} else if (p_node->type == Node::TYPE_MEMBER) {
+
+		MemberNode *member = static_cast<MemberNode *>(p_node);
+		return _validate_assign(member->owner, p_builtin_types, r_message);
+
+	} else if (p_node->type == Node::TYPE_VARIABLE) {
+
+		VariableNode *var = static_cast<VariableNode *>(p_node);
+
+		if (shader->uniforms.has(var->name)) {
+			if (r_message)
+				*r_message = RTR("Assignment to uniform.");
+			return false;
+		}
+
+		if (shader->varyings.has(var->name) && current_function != String("vertex")) {
+			if (r_message)
+				*r_message = RTR("Varyings can only be assigned in vertex function.");
+			return false;
+		}
+
+		if (!(p_builtin_types.has(var->name) && p_builtin_types[var->name].constant)) {
+			return true;
+		}
+	}
+
+	if (r_message)
+		*r_message = "Assignment to constant expression.";
+	return false;
+}
+
+ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, const Map<StringName, BuiltInInfo> &p_builtin_types) {
 
 	Vector<Expression> expression;
 	//Vector<TokenType> operators;
@@ -2238,7 +2755,6 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 			expr = constant;
 
 		} else if (tk.type == TK_TRUE) {
-			//print_line("found true");
 
 			//handle true constant
 			ConstantNode *constant = alloc_node<ConstantNode>();
@@ -2337,7 +2853,7 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 						//add to current function as dependency
 						for (int j = 0; j < shader->functions.size(); j++) {
 							if (shader->functions[j].name == current_function) {
-								shader->functions[j].uses_function.insert(name);
+								shader->functions.write[j].uses_function.insert(name);
 								break;
 							}
 						}
@@ -2419,10 +2935,12 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 		/* OK now see what's NEXT to the operator.. */
 
 		while (true) {
-			TkPos pos = _get_tkpos();
+			TkPos pos2 = _get_tkpos();
 			tk = _get_token();
 
-			if (tk.type == TK_PERIOD) {
+			if (tk.type == TK_CURSOR) {
+				//do nothing
+			} else if (tk.type == TK_PERIOD) {
 
 				StringName identifier;
 				if (_get_completable_identifier(p_block, COMPLETION_INDEX, identifier)) {
@@ -2577,14 +3095,15 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 			} else if (tk.type == TK_BRACKET_OPEN) {
 
 				Node *index = _parse_and_reduce_expression(p_block, p_builtin_types);
+				if (!index)
+					return NULL;
 
 				if (index->get_datatype() != TYPE_INT && index->get_datatype() != TYPE_UINT) {
 					_set_error("Only integer datatypes are allowed for indexing");
 					return NULL;
 				}
 
-				bool index_valid = false;
-				DataType member_type;
+				DataType member_type = TYPE_VOID;
 
 				switch (expr->get_datatype()) {
 					case TYPE_BVEC2:
@@ -2602,13 +3121,14 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 							_set_error("Only integer constants are allowed as index at the moment");
 							return NULL;
 						}
-						index_valid = true;
+
 						switch (expr->get_datatype()) {
 							case TYPE_BVEC2: member_type = TYPE_BOOL; break;
 							case TYPE_VEC2: member_type = TYPE_FLOAT; break;
 							case TYPE_IVEC2: member_type = TYPE_INT; break;
 							case TYPE_UVEC2: member_type = TYPE_UINT; break;
 							case TYPE_MAT2: member_type = TYPE_VEC2; break;
+							default: break;
 						}
 
 						break;
@@ -2627,13 +3147,14 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 							_set_error("Only integer constants are allowed as index at the moment");
 							return NULL;
 						}
-						index_valid = true;
+
 						switch (expr->get_datatype()) {
 							case TYPE_BVEC3: member_type = TYPE_BOOL; break;
 							case TYPE_VEC3: member_type = TYPE_FLOAT; break;
 							case TYPE_IVEC3: member_type = TYPE_INT; break;
 							case TYPE_UVEC3: member_type = TYPE_UINT; break;
 							case TYPE_MAT3: member_type = TYPE_VEC3; break;
+							default: break;
 						}
 						break;
 					case TYPE_BVEC4:
@@ -2651,24 +3172,20 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 							_set_error("Only integer constants are allowed as index at the moment");
 							return NULL;
 						}
-						index_valid = true;
+
 						switch (expr->get_datatype()) {
 							case TYPE_BVEC4: member_type = TYPE_BOOL; break;
 							case TYPE_VEC4: member_type = TYPE_FLOAT; break;
 							case TYPE_IVEC4: member_type = TYPE_INT; break;
 							case TYPE_UVEC4: member_type = TYPE_UINT; break;
 							case TYPE_MAT4: member_type = TYPE_VEC4; break;
+							default: break;
 						}
 						break;
 					default: {
 						_set_error("Object of type '" + get_datatype_name(expr->get_datatype()) + "' can't be indexed");
 						return NULL;
 					}
-				}
-
-				if (!index_valid) {
-					_set_error("Invalid index");
-					return NULL;
 				}
 
 				OperatorNode *op = alloc_node<OperatorNode>();
@@ -2694,10 +3211,15 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 					_set_error("Invalid base type for increment/decrement operator");
 					return NULL;
 				}
+
+				if (!_validate_assign(expr, p_builtin_types)) {
+					_set_error("Invalid use of increment/decrement operator in constant expression.");
+					return NULL;
+				}
 				expr = op;
 			} else {
 
-				_set_tkpos(pos);
+				_set_tkpos(pos2);
 				break;
 			}
 		}
@@ -2867,7 +3389,7 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 				expr_pos++;
 				if (expr_pos == expression.size()) {
 					//can happen..
-					_set_error("Unexpected end of expression..");
+					_set_error("Unexpected end of expression...");
 					return NULL;
 				}
 			}
@@ -2877,18 +3399,23 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 
 				OperatorNode *op = alloc_node<OperatorNode>();
 				op->op = expression[i].op;
+				if ((op->op == OP_INCREMENT || op->op == OP_DECREMENT) && !_validate_assign(expression[i + 1].node, p_builtin_types)) {
+
+					_set_error("Can't use increment/decrement operator in constant expression.");
+					return NULL;
+				}
 				op->arguments.push_back(expression[i + 1].node);
 
-				expression[i].is_op = false;
-				expression[i].node = op;
+				expression.write[i].is_op = false;
+				expression.write[i].node = op;
 
 				if (!_validate_operator(op, &op->return_cache)) {
 
 					String at;
-					for (int i = 0; i < op->arguments.size(); i++) {
-						if (i > 0)
+					for (int j = 0; j < op->arguments.size(); j++) {
+						if (j > 0)
 							at += " and ";
-						at += get_datatype_name(op->arguments[i]->get_datatype());
+						at += get_datatype_name(op->arguments[j]->get_datatype());
 					}
 					_set_error("Invalid arguments to unary operator '" + get_operator_text(op->op) + "' :" + at);
 					return NULL;
@@ -2899,12 +3426,12 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 		} else if (is_ternary) {
 
 			if (next_op < 1 || next_op >= (expression.size() - 1)) {
-				_set_error("Parser bug..");
+				_set_error("Parser bug...");
 				ERR_FAIL_V(NULL);
 			}
 
 			if (next_op + 2 >= expression.size() || !expression[next_op + 2].is_op || expression[next_op + 2].op != OP_SELECT_ELSE) {
-				_set_error("Mising matching ':' for select operator");
+				_set_error("Missing matching ':' for select operator");
 				return NULL;
 			}
 
@@ -2914,8 +3441,8 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 			op->arguments.push_back(expression[next_op + 1].node);
 			op->arguments.push_back(expression[next_op + 3].node);
 
-			expression[next_op - 1].is_op = false;
-			expression[next_op - 1].node = op;
+			expression.write[next_op - 1].is_op = false;
+			expression.write[next_op - 1].node = op;
 			if (!_validate_operator(op, &op->return_cache)) {
 
 				String at;
@@ -2935,7 +3462,7 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 		} else {
 
 			if (next_op < 1 || next_op >= (expression.size() - 1)) {
-				_set_error("Parser bug..");
+				_set_error("Parser bug...");
 				ERR_FAIL_V(NULL);
 			}
 
@@ -2944,22 +3471,32 @@ ShaderLanguage::Node *ShaderLanguage::_parse_expression(BlockNode *p_block, cons
 
 			if (expression[next_op - 1].is_op) {
 
-				_set_error("Parser bug..");
+				_set_error("Parser bug...");
 				ERR_FAIL_V(NULL);
+			}
+
+			if (_is_operator_assign(op->op)) {
+
+				String assign_message;
+				if (!_validate_assign(expression[next_op - 1].node, p_builtin_types, &assign_message)) {
+
+					_set_error(assign_message);
+					return NULL;
+				}
 			}
 
 			if (expression[next_op + 1].is_op) {
 				// this is not invalid and can really appear
 				// but it becomes invalid anyway because no binary op
-				// can be followed by an unary op in a valid combination,
+				// can be followed by a unary op in a valid combination,
 				// due to how precedence works, unaries will always disappear first
 
-				_set_error("Parser bug..");
+				_set_error("Parser bug...");
 			}
 
 			op->arguments.push_back(expression[next_op - 1].node); //expression goes as left
 			op->arguments.push_back(expression[next_op + 1].node); //next expression goes as right
-			expression[next_op - 1].node = op;
+			expression.write[next_op - 1].node = op;
 
 			//replace all 3 nodes by this operator and make it an expression
 
@@ -2994,21 +3531,20 @@ ShaderLanguage::Node *ShaderLanguage::_reduce_expression(BlockNode *p_block, Sha
 	if (op->op == OP_CONSTRUCT) {
 
 		ERR_FAIL_COND_V(op->arguments[0]->type != Node::TYPE_VARIABLE, p_node);
-		VariableNode *vn = static_cast<VariableNode *>(op->arguments[0]);
-		//StringName name=vn->name;
 
-		DataType base = get_scalar_type(op->get_datatype());
+		DataType type = op->get_datatype();
+		DataType base = get_scalar_type(type);
+		int cardinality = get_cardinality(type);
 
 		Vector<ConstantNode::Value> values;
 
 		for (int i = 1; i < op->arguments.size(); i++) {
 
-			op->arguments[i] = _reduce_expression(p_block, op->arguments[i]);
+			op->arguments.write[i] = _reduce_expression(p_block, op->arguments[i]);
 			if (op->arguments[i]->type == Node::TYPE_CONSTANT) {
 				ConstantNode *cn = static_cast<ConstantNode *>(op->arguments[i]);
 
 				if (get_scalar_type(cn->datatype) == base) {
-
 					for (int j = 0; j < cn->values.size(); j++) {
 						values.push_back(cn->values[j]);
 					}
@@ -3028,13 +3564,37 @@ ShaderLanguage::Node *ShaderLanguage::_reduce_expression(BlockNode *p_block, Sha
 			}
 		}
 
+		if (values.size() == 1) {
+			if (type >= TYPE_MAT2 && type <= TYPE_MAT4) {
+				ConstantNode::Value value = values[0];
+				ConstantNode::Value zero;
+				zero.real = 0.0f;
+				int size = 2 + (type - TYPE_MAT2);
+
+				values.clear();
+				for (int i = 0; i < size; i++) {
+					for (int j = 0; j < size; j++) {
+						values.push_back(i == j ? value : zero);
+					}
+				}
+			} else {
+				ConstantNode::Value value = values[0];
+				for (int i = 1; i < cardinality; i++) {
+					values.push_back(value);
+				}
+			}
+		} else if (values.size() != cardinality) {
+			ERR_PRINT("Failed to reduce expression, values and cardinality mismatch.");
+			return p_node;
+		}
+
 		ConstantNode *cn = alloc_node<ConstantNode>();
 		cn->datatype = op->get_datatype();
 		cn->values = values;
 		return cn;
 	} else if (op->op == OP_NEGATE) {
 
-		op->arguments[0] = _reduce_expression(p_block, op->arguments[0]);
+		op->arguments.write[0] = _reduce_expression(p_block, op->arguments[0]);
 		if (op->arguments[0]->type == Node::TYPE_CONSTANT) {
 
 			ConstantNode *cn = static_cast<ConstantNode *>(op->arguments[0]);
@@ -3054,12 +3614,14 @@ ShaderLanguage::Node *ShaderLanguage::_reduce_expression(BlockNode *p_block, Sha
 						nv.sint = -cn->values[i].sint;
 					} break;
 					case TYPE_UINT: {
+						// FIXME: This can't work on uint
 						nv.uint = -cn->values[i].uint;
 					} break;
 					case TYPE_FLOAT: {
 						nv.real = -cn->values[i].real;
 					} break;
-					default: {}
+					default: {
+					}
 				}
 
 				values.push_back(nv);
@@ -3073,7 +3635,7 @@ ShaderLanguage::Node *ShaderLanguage::_reduce_expression(BlockNode *p_block, Sha
 	return p_node;
 }
 
-ShaderLanguage::Node *ShaderLanguage::_parse_and_reduce_expression(BlockNode *p_block, const Map<StringName, DataType> &p_builtin_types) {
+ShaderLanguage::Node *ShaderLanguage::_parse_and_reduce_expression(BlockNode *p_block, const Map<StringName, BuiltInInfo> &p_builtin_types) {
 
 	ShaderLanguage::Node *expr = _parse_expression(p_block, p_builtin_types);
 	if (!expr) //errored
@@ -3084,7 +3646,7 @@ ShaderLanguage::Node *ShaderLanguage::_parse_and_reduce_expression(BlockNode *p_
 	return expr;
 }
 
-Error ShaderLanguage::_parse_block(BlockNode *p_block, const Map<StringName, DataType> &p_builtin_types, bool p_just_one, bool p_can_break, bool p_can_continue) {
+Error ShaderLanguage::_parse_block(BlockNode *p_block, const Map<StringName, BuiltInInfo> &p_builtin_types, bool p_just_one, bool p_can_break, bool p_can_continue) {
 
 	while (true) {
 
@@ -3105,14 +3667,25 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const Map<StringName, Dat
 				precision = get_token_precision(tk.type);
 				tk = _get_token();
 				if (!is_token_nonvoid_datatype(tk.type)) {
-					_set_error("Expected datatype after precission");
+					_set_error("Expected datatype after precision");
 					return ERR_PARSE_ERROR;
 				}
+			}
+
+			if (!is_token_variable_datatype(tk.type)) {
+				_set_error("Invalid data type for variable (samplers not allowed)");
+				return ERR_PARSE_ERROR;
 			}
 
 			DataType type = get_token_datatype(tk.type);
 
 			tk = _get_token();
+
+			VariableDeclarationNode *vardecl = alloc_node<VariableDeclarationNode>();
+			vardecl->datatype = type;
+			vardecl->precision = precision;
+
+			p_block->statements.push_back(vardecl);
 
 			while (true) {
 
@@ -3131,26 +3704,32 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const Map<StringName, Dat
 				var.type = type;
 				var.precision = precision;
 				var.line = tk_line;
-				p_block->variables[name] = var;
+
+				VariableDeclarationNode::Declaration decl;
+
+				decl.name = name;
+				decl.initializer = NULL;
 
 				tk = _get_token();
 
 				if (tk.type == TK_OP_ASSIGN) {
-					//variable creted with assignment! must parse an expression
+					//variable created with assignment! must parse an expression
 					Node *n = _parse_and_reduce_expression(p_block, p_builtin_types);
 					if (!n)
 						return ERR_PARSE_ERROR;
 
-					OperatorNode *assign = alloc_node<OperatorNode>();
-					VariableNode *vnode = alloc_node<VariableNode>();
-					vnode->name = name;
-					vnode->datatype_cache = type;
-					assign->arguments.push_back(vnode);
-					assign->arguments.push_back(n);
-					assign->op = OP_ASSIGN;
-					p_block->statements.push_back(assign);
+					decl.initializer = n;
+
+					if (var.type != n->get_datatype()) {
+						_set_error("Invalid assignment of '" + get_datatype_name(n->get_datatype()) + "' to '" + get_datatype_name(var.type) + "'");
+						return ERR_PARSE_ERROR;
+					}
 					tk = _get_token();
 				}
+
+				p_block->variables[name] = var;
+
+				vardecl->declarations.push_back(decl);
 
 				if (tk.type == TK_COMMA) {
 					tk = _get_token();
@@ -3214,7 +3793,7 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const Map<StringName, Dat
 			//if () {}
 			tk = _get_token();
 			if (tk.type != TK_PARENTHESIS_OPEN) {
-				_set_error("Expected '(' after if");
+				_set_error("Expected '(' after while");
 				return ERR_PARSE_ERROR;
 			}
 
@@ -3236,7 +3815,63 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const Map<StringName, Dat
 			cf->blocks.push_back(block);
 			p_block->statements.push_back(cf);
 
-			Error err = _parse_block(block, p_builtin_types, true, p_can_break, p_can_continue);
+			Error err = _parse_block(block, p_builtin_types, true, true, true);
+			if (err)
+				return err;
+		} else if (tk.type == TK_CF_FOR) {
+			//if () {}
+			tk = _get_token();
+			if (tk.type != TK_PARENTHESIS_OPEN) {
+				_set_error("Expected '(' after for");
+				return ERR_PARSE_ERROR;
+			}
+
+			ControlFlowNode *cf = alloc_node<ControlFlowNode>();
+			cf->flow_op = FLOW_OP_FOR;
+
+			BlockNode *init_block = alloc_node<BlockNode>();
+			init_block->parent_block = p_block;
+			init_block->single_statement = true;
+			cf->blocks.push_back(init_block);
+			if (_parse_block(init_block, p_builtin_types, true, false, false) != OK) {
+				return ERR_PARSE_ERROR;
+			}
+
+			Node *n = _parse_and_reduce_expression(init_block, p_builtin_types);
+			if (!n)
+				return ERR_PARSE_ERROR;
+
+			if (n->get_datatype() != TYPE_BOOL) {
+				_set_error("Middle expression is expected to be boolean.");
+				return ERR_PARSE_ERROR;
+			}
+
+			tk = _get_token();
+			if (tk.type != TK_SEMICOLON) {
+				_set_error("Expected ';' after middle expression");
+				return ERR_PARSE_ERROR;
+			}
+
+			cf->expressions.push_back(n);
+
+			n = _parse_and_reduce_expression(init_block, p_builtin_types);
+			if (!n)
+				return ERR_PARSE_ERROR;
+
+			cf->expressions.push_back(n);
+
+			tk = _get_token();
+			if (tk.type != TK_PARENTHESIS_CLOSE) {
+				_set_error("Expected ')' after third expression");
+				return ERR_PARSE_ERROR;
+			}
+
+			BlockNode *block = alloc_node<BlockNode>();
+			block->parent_block = init_block;
+			cf->blocks.push_back(block);
+			p_block->statements.push_back(cf);
+
+			Error err = _parse_block(block, p_builtin_types, true, true, true);
 			if (err)
 				return err;
 
@@ -3285,6 +3920,70 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const Map<StringName, Dat
 			}
 
 			p_block->statements.push_back(flow);
+		} else if (tk.type == TK_CF_DISCARD) {
+
+			//check return type
+			BlockNode *b = p_block;
+			while (b && !b->parent_function) {
+				b = b->parent_block;
+			}
+			if (!b) {
+				_set_error("Bug");
+				return ERR_BUG;
+			}
+
+			if (!b->parent_function->can_discard) {
+				_set_error("Use of 'discard' is not allowed here.");
+				return ERR_PARSE_ERROR;
+			}
+
+			ControlFlowNode *flow = alloc_node<ControlFlowNode>();
+			flow->flow_op = FLOW_OP_DISCARD;
+
+			pos = _get_tkpos();
+			tk = _get_token();
+			if (tk.type != TK_SEMICOLON) {
+				//all is good
+				_set_error("Expected ';' after discard");
+			}
+
+			p_block->statements.push_back(flow);
+		} else if (tk.type == TK_CF_BREAK) {
+
+			if (!p_can_break) {
+				//all is good
+				_set_error("Breaking is not allowed here");
+			}
+
+			ControlFlowNode *flow = alloc_node<ControlFlowNode>();
+			flow->flow_op = FLOW_OP_BREAK;
+
+			pos = _get_tkpos();
+			tk = _get_token();
+			if (tk.type != TK_SEMICOLON) {
+				//all is good
+				_set_error("Expected ';' after break");
+			}
+
+			p_block->statements.push_back(flow);
+		} else if (tk.type == TK_CF_CONTINUE) {
+
+			if (!p_can_break) {
+				//all is good
+				_set_error("Continuing is not allowed here");
+			}
+
+			ControlFlowNode *flow = alloc_node<ControlFlowNode>();
+			flow->flow_op = FLOW_OP_CONTINUE;
+
+			pos = _get_tkpos();
+			tk = _get_token();
+			if (tk.type != TK_SEMICOLON) {
+				//all is good
+				_set_error("Expected ';' after continue");
+			}
+
+			p_block->statements.push_back(flow);
 
 		} else {
 
@@ -3309,12 +4008,12 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const Map<StringName, Dat
 	return OK;
 }
 
-Error ShaderLanguage::_parse_shader(const Map<StringName, Map<StringName, DataType> > &p_functions, const Set<String> &p_render_modes, const Set<String> &p_shader_types) {
+Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_functions, const Vector<StringName> &p_render_modes, const Set<String> &p_shader_types) {
 
 	Token tk = _get_token();
 
 	if (tk.type != TK_SHADER_TYPE) {
-		_set_error("Expected 'shader_type' at the begining of shader.");
+		_set_error("Expected 'shader_type' at the beginning of shader.");
 		return ERR_PARSE_ERROR;
 	}
 
@@ -3368,7 +4067,7 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, Map<StringName, DataTy
 						return ERR_PARSE_ERROR;
 					}
 
-					if (!p_render_modes.has(mode)) {
+					if (p_render_modes.find(mode) == -1) {
 						_set_error("Invalid render mode: '" + String(mode) + "'");
 						return ERR_PARSE_ERROR;
 					}
@@ -3396,10 +4095,16 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, Map<StringName, DataTy
 
 				bool uniform = tk.type == TK_UNIFORM;
 				DataPrecision precision = PRECISION_DEFAULT;
+				DataInterpolation interpolation = INTERPOLATION_SMOOTH;
 				DataType type;
 				StringName name;
 
 				tk = _get_token();
+				if (is_token_interpolation(tk.type)) {
+					interpolation = get_token_interpolation(tk.type);
+					tk = _get_token();
+				}
+
 				if (is_token_precision(tk.type)) {
 					precision = get_token_precision(tk.type);
 					tk = _get_token();
@@ -3416,8 +4121,9 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, Map<StringName, DataTy
 					_set_error("void datatype not allowed here");
 					return ERR_PARSE_ERROR;
 				}
-				if (!uniform && type < TYPE_FLOAT && type > TYPE_VEC4) { // FIXME: always false! should it be || instead?
-					_set_error("Invalid type for varying, only float,vec2,vec3,vec4 allowed.");
+
+				if (!uniform && (type < TYPE_FLOAT || type > TYPE_MAT4)) {
+					_set_error("Invalid type for varying, only float,vec2,vec3,vec4,mat2,mat3,mat4 allowed.");
 					return ERR_PARSE_ERROR;
 				}
 
@@ -3429,74 +4135,54 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, Map<StringName, DataTy
 
 				name = tk.text;
 
-				if (_find_identifier(NULL, Map<StringName, DataType>(), name)) {
+				if (_find_identifier(NULL, Map<StringName, BuiltInInfo>(), name)) {
 					_set_error("Redefinition of '" + String(name) + "'");
 					return ERR_PARSE_ERROR;
 				}
 
 				if (uniform) {
 
-					ShaderNode::Uniform uniform;
+					ShaderNode::Uniform uniform2;
 
 					if (is_sampler_type(type)) {
-						uniform.texture_order = texture_uniforms++;
-						uniform.order = -1;
+						uniform2.texture_order = texture_uniforms++;
+						uniform2.order = -1;
 					} else {
-						uniform.texture_order = -1;
-						uniform.order = uniforms++;
+						uniform2.texture_order = -1;
+						uniform2.order = uniforms++;
 					}
-					uniform.type = type;
-					uniform.precission = precision;
+					uniform2.type = type;
+					uniform2.precision = precision;
 
 					//todo parse default value
 
 					tk = _get_token();
-					if (tk.type == TK_OP_ASSIGN) {
-
-						Node *expr = _parse_and_reduce_expression(NULL, Map<StringName, DataType>());
-						if (!expr)
-							return ERR_PARSE_ERROR;
-						if (expr->type != Node::TYPE_CONSTANT) {
-							_set_error("Expected constant expression after '='");
-							return ERR_PARSE_ERROR;
-						}
-
-						ConstantNode *cn = static_cast<ConstantNode *>(expr);
-
-						uniform.default_value.resize(cn->values.size());
-
-						if (!convert_constant(cn, uniform.type, uniform.default_value.ptr())) {
-							_set_error("Can't convert constant to " + get_datatype_name(uniform.type));
-							return ERR_PARSE_ERROR;
-						}
-						tk = _get_token();
-					}
 
 					if (tk.type == TK_COLON) {
 						//hint
 
 						tk = _get_token();
 						if (tk.type == TK_HINT_WHITE_TEXTURE) {
-							uniform.hint = ShaderNode::Uniform::HINT_WHITE;
+							uniform2.hint = ShaderNode::Uniform::HINT_WHITE;
 						} else if (tk.type == TK_HINT_BLACK_TEXTURE) {
-							uniform.hint = ShaderNode::Uniform::HINT_BLACK;
+							uniform2.hint = ShaderNode::Uniform::HINT_BLACK;
 						} else if (tk.type == TK_HINT_NORMAL_TEXTURE) {
-							uniform.hint = ShaderNode::Uniform::HINT_NORMAL;
+							uniform2.hint = ShaderNode::Uniform::HINT_NORMAL;
 						} else if (tk.type == TK_HINT_ANISO_TEXTURE) {
-							uniform.hint = ShaderNode::Uniform::HINT_ANISO;
+							uniform2.hint = ShaderNode::Uniform::HINT_ANISO;
 						} else if (tk.type == TK_HINT_ALBEDO_TEXTURE) {
-							uniform.hint = ShaderNode::Uniform::HINT_ALBEDO;
+							uniform2.hint = ShaderNode::Uniform::HINT_ALBEDO;
 						} else if (tk.type == TK_HINT_BLACK_ALBEDO_TEXTURE) {
-							uniform.hint = ShaderNode::Uniform::HINT_BLACK_ALBEDO;
+							uniform2.hint = ShaderNode::Uniform::HINT_BLACK_ALBEDO;
 						} else if (tk.type == TK_HINT_COLOR) {
 							if (type != TYPE_VEC4) {
 								_set_error("Color hint is for vec4 only");
 								return ERR_PARSE_ERROR;
 							}
-							uniform.hint = ShaderNode::Uniform::HINT_COLOR;
+							uniform2.hint = ShaderNode::Uniform::HINT_COLOR;
 						} else if (tk.type == TK_HINT_RANGE) {
 
-							uniform.hint = ShaderNode::Uniform::HINT_RANGE;
+							uniform2.hint = ShaderNode::Uniform::HINT_RANGE;
 							if (type != TYPE_FLOAT && type != TYPE_INT) {
 								_set_error("Range hint is for float and int only");
 								return ERR_PARSE_ERROR;
@@ -3522,8 +4208,8 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, Map<StringName, DataTy
 								return ERR_PARSE_ERROR;
 							}
 
-							uniform.hint_range[0] = tk.constant;
-							uniform.hint_range[0] *= sign;
+							uniform2.hint_range[0] = tk.constant;
+							uniform2.hint_range[0] *= sign;
 
 							tk = _get_token();
 
@@ -3546,8 +4232,8 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, Map<StringName, DataTy
 								return ERR_PARSE_ERROR;
 							}
 
-							uniform.hint_range[1] = tk.constant;
-							uniform.hint_range[1] *= sign;
+							uniform2.hint_range[1] = tk.constant;
+							uniform2.hint_range[1] *= sign;
 
 							tk = _get_token();
 
@@ -3559,13 +4245,13 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, Map<StringName, DataTy
 									return ERR_PARSE_ERROR;
 								}
 
-								uniform.hint_range[2] = tk.constant;
+								uniform2.hint_range[2] = tk.constant;
 								tk = _get_token();
 							} else {
 								if (type == TYPE_INT) {
-									uniform.hint_range[2] = 1;
+									uniform2.hint_range[2] = 1;
 								} else {
-									uniform.hint_range[2] = 0.001;
+									uniform2.hint_range[2] = 0.001;
 								}
 							}
 
@@ -3578,7 +4264,7 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, Map<StringName, DataTy
 							_set_error("Expected valid type hint after ':'.");
 						}
 
-						if (uniform.hint != ShaderNode::Uniform::HINT_RANGE && uniform.hint != ShaderNode::Uniform::HINT_NONE && uniform.hint != ShaderNode::Uniform::HINT_COLOR && type <= TYPE_MAT4) {
+						if (uniform2.hint != ShaderNode::Uniform::HINT_RANGE && uniform2.hint != ShaderNode::Uniform::HINT_NONE && uniform2.hint != ShaderNode::Uniform::HINT_COLOR && type <= TYPE_MAT4) {
 							_set_error("This hint is only for sampler types");
 							return ERR_PARSE_ERROR;
 						}
@@ -3586,7 +4272,28 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, Map<StringName, DataTy
 						tk = _get_token();
 					}
 
-					shader->uniforms[name] = uniform;
+					if (tk.type == TK_OP_ASSIGN) {
+
+						Node *expr = _parse_and_reduce_expression(NULL, Map<StringName, BuiltInInfo>());
+						if (!expr)
+							return ERR_PARSE_ERROR;
+						if (expr->type != Node::TYPE_CONSTANT) {
+							_set_error("Expected constant expression after '='");
+							return ERR_PARSE_ERROR;
+						}
+
+						ConstantNode *cn = static_cast<ConstantNode *>(expr);
+
+						uniform2.default_value.resize(cn->values.size());
+
+						if (!convert_constant(cn, uniform2.type, uniform2.default_value.ptrw())) {
+							_set_error("Can't convert constant to " + get_datatype_name(uniform2.type));
+							return ERR_PARSE_ERROR;
+						}
+						tk = _get_token();
+					}
+
+					shader->uniforms[name] = uniform2;
 
 					if (tk.type != TK_SEMICOLON) {
 						_set_error("Expected ';'");
@@ -3596,7 +4303,8 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, Map<StringName, DataTy
 
 					ShaderNode::Varying varying;
 					varying.type = type;
-					varying.precission = precision;
+					varying.precision = precision;
+					varying.interpolation = interpolation;
 					shader->varyings[name] = varying;
 
 					tk = _get_token();
@@ -3624,6 +4332,11 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, Map<StringName, DataTy
 					return ERR_PARSE_ERROR;
 				}
 
+				if (!is_token_variable_datatype(tk.type)) {
+					_set_error("Invalid data type for function return (samplers not allowed)");
+					return ERR_PARSE_ERROR;
+				}
+
 				type = get_token_datatype(tk.type);
 
 				_get_completable_identifier(NULL, COMPLETION_MAIN_FUNCTION, name);
@@ -3633,7 +4346,7 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, Map<StringName, DataTy
 					return ERR_PARSE_ERROR;
 				}
 
-				if (_find_identifier(NULL, Map<StringName, DataType>(), name)) {
+				if (_find_identifier(NULL, Map<StringName, BuiltInInfo>(), name)) {
 					_set_error("Redefinition of '" + String(name) + "'");
 					return ERR_PARSE_ERROR;
 				}
@@ -3644,9 +4357,9 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, Map<StringName, DataTy
 					return ERR_PARSE_ERROR;
 				}
 
-				Map<StringName, DataType> builtin_types;
+				Map<StringName, BuiltInInfo> builtin_types;
 				if (p_functions.has(name)) {
-					builtin_types = p_functions[name];
+					builtin_types = p_functions[name].built_ins;
 				}
 
 				ShaderNode::Function function;
@@ -3663,6 +4376,10 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, Map<StringName, DataTy
 				func_node->name = name;
 				func_node->return_type = type;
 				func_node->return_precision = precision;
+
+				if (p_functions.has(name)) {
+					func_node->can_discard = p_functions[name].can_discard;
+				}
 
 				func_node->body = alloc_node<BlockNode>();
 				func_node->body->parent_function = func_node;
@@ -3775,13 +4492,58 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, Map<StringName, DataTy
 	return OK;
 }
 
+// skips over whitespace and /* */ and // comments
+static int _get_first_ident_pos(const String &p_code) {
+
+	int idx = 0;
+
+#define GETCHAR(m_idx) (((idx + m_idx) < p_code.length()) ? p_code[idx + m_idx] : CharType(0))
+
+	while (true) {
+		if (GETCHAR(0) == '/' && GETCHAR(1) == '/') {
+			idx += 2;
+			while (true) {
+				if (GETCHAR(0) == 0) return 0;
+				if (GETCHAR(0) == '\n') {
+					idx++;
+					break; // loop
+				}
+				idx++;
+			}
+		} else if (GETCHAR(0) == '/' && GETCHAR(1) == '*') {
+			idx += 2;
+			while (true) {
+				if (GETCHAR(0) == 0) return 0;
+				if (GETCHAR(0) == '*' && GETCHAR(1) == '/') {
+					idx += 2;
+					break; // loop
+				}
+				idx++;
+			}
+		} else {
+			switch (GETCHAR(0)) {
+				case ' ':
+				case '\t':
+				case '\r':
+				case '\n': {
+					idx++;
+				} break; // switch
+				default:
+					return idx;
+			}
+		}
+	}
+
+#undef GETCHAR
+}
+
 String ShaderLanguage::get_shader_type(const String &p_code) {
 
 	bool reading_type = false;
 
 	String cur_identifier;
 
-	for (int i = 0; i < p_code.length(); i++) {
+	for (int i = _get_first_ident_pos(p_code); i < p_code.length(); i++) {
 
 		if (p_code[i] == ';') {
 			break;
@@ -3810,7 +4572,7 @@ String ShaderLanguage::get_shader_type(const String &p_code) {
 	return String();
 }
 
-Error ShaderLanguage::compile(const String &p_code, const Map<StringName, Map<StringName, DataType> > &p_functions, const Set<String> &p_render_modes, const Set<String> &p_shader_types) {
+Error ShaderLanguage::compile(const String &p_code, const Map<StringName, FunctionInfo> &p_functions, const Vector<StringName> &p_render_modes, const Set<String> &p_shader_types) {
 
 	clear();
 
@@ -3827,7 +4589,7 @@ Error ShaderLanguage::compile(const String &p_code, const Map<StringName, Map<St
 	return OK;
 }
 
-Error ShaderLanguage::complete(const String &p_code, const Map<StringName, Map<StringName, DataType> > &p_functions, const Set<String> &p_render_modes, const Set<String> &p_shader_types, List<String> *r_options, String &r_call_hint) {
+Error ShaderLanguage::complete(const String &p_code, const Map<StringName, FunctionInfo> &p_functions, const Vector<StringName> &p_render_modes, const Set<String> &p_shader_types, List<String> *r_options, String &r_call_hint) {
 
 	clear();
 
@@ -3837,24 +4599,26 @@ Error ShaderLanguage::complete(const String &p_code, const Map<StringName, Map<S
 
 	shader = alloc_node<ShaderNode>();
 	Error err = _parse_shader(p_functions, p_render_modes, p_shader_types);
+	if (err != OK)
+		ERR_PRINT("Failed to parse shader");
 
 	switch (completion_type) {
 
 		case COMPLETION_NONE: {
-			//do none
-			return ERR_PARSE_ERROR;
+			//do nothing
+			return OK;
 		} break;
 		case COMPLETION_RENDER_MODE: {
-			for (const Set<String>::Element *E = p_render_modes.front(); E; E = E->next()) {
+			for (int i = 0; i < p_render_modes.size(); i++) {
 
-				r_options->push_back(E->get());
+				r_options->push_back(p_render_modes[i]);
 			}
 
 			return OK;
 		} break;
 		case COMPLETION_MAIN_FUNCTION: {
 
-			for (const Map<StringName, Map<StringName, DataType> >::Element *E = p_functions.front(); E; E = E->next()) {
+			for (const Map<StringName, FunctionInfo>::Element *E = p_functions.front(); E; E = E->next()) {
 
 				r_options->push_back(E->key());
 			}
@@ -3895,7 +4659,7 @@ Error ShaderLanguage::complete(const String &p_code, const Map<StringName, Map<S
 
 			if (comp_ident && skip_function != StringName() && p_functions.has(skip_function)) {
 
-				for (Map<StringName, DataType>::Element *E = p_functions[skip_function].front(); E; E = E->next()) {
+				for (Map<StringName, BuiltInInfo>::Element *E = p_functions[skip_function].built_ins.front(); E; E = E->next()) {
 					matches.insert(E->key());
 				}
 			}
@@ -4059,7 +4823,8 @@ Error ShaderLanguage::complete(const String &p_code, const Map<StringName, Map<S
 				case TYPE_MAT2: limit = 2; break;
 				case TYPE_MAT3: limit = 3; break;
 				case TYPE_MAT4: limit = 4; break;
-				default: {}
+				default: {
+				}
 			}
 
 			for (int i = 0; i < limit; i++) {

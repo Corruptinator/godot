@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef CONTEXT_GL_X11_H
 #define CONTEXT_GL_X11_H
 
@@ -35,16 +36,24 @@
 */
 #ifdef X11_ENABLED
 
-#if defined(OPENGL_ENABLED) || defined(LEGACYGL_ENABLED)
+#if defined(OPENGL_ENABLED)
 
-#include "drivers/gl_context/context_gl.h"
-#include "os/os.h"
+#include "core/os/os.h"
 #include <X11/Xlib.h>
+#include <X11/extensions/Xrender.h>
 
 struct ContextGL_X11_Private;
 
-class ContextGL_X11 : public ContextGL {
+class ContextGL_X11 {
 
+public:
+	enum ContextType {
+		OLDSTYLE,
+		GLES_2_0_COMPATIBLE,
+		GLES_3_0_COMPATIBLE
+	};
+
+private:
 	ContextGL_X11_Private *p;
 	OS::VideoMode default_video_mode;
 	//::Colormap x11_colormap;
@@ -53,22 +62,22 @@ class ContextGL_X11 : public ContextGL {
 	bool double_buffer;
 	bool direct_render;
 	int glx_minor, glx_major;
-	bool opengl_3_context;
 	bool use_vsync;
+	ContextType context_type;
 
 public:
-	virtual void release_current();
-	virtual void make_current();
-	virtual void swap_buffers();
-	virtual int get_window_width();
-	virtual int get_window_height();
+	void release_current();
+	void make_current();
+	void swap_buffers();
+	int get_window_width();
+	int get_window_height();
 
-	virtual Error initialize();
+	Error initialize();
 
-	virtual void set_use_vsync(bool p_use);
-	virtual bool is_using_vsync() const;
+	void set_use_vsync(bool p_use);
+	bool is_using_vsync() const;
 
-	ContextGL_X11(::Display *p_x11_display, ::Window &p_x11_window, const OS::VideoMode &p_default_video_mode, bool p_opengl_3_context);
+	ContextGL_X11(::Display *p_x11_display, ::Window &p_x11_window, const OS::VideoMode &p_default_video_mode, ContextType p_context_type);
 	~ContextGL_X11();
 };
 

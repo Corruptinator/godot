@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,8 +27,9 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "sprite_3d.h"
-#include "core_string_names.h"
+#include "core/core_string_names.h"
 #include "scene/scene_string_names.h"
 
 Color SpriteBase3D::_get_color_accum() {
@@ -70,13 +71,9 @@ void SpriteBase3D::_notification(int p_what) {
 		if (!pending_update)
 			_im_update();
 
-		Node *parent = get_parent();
-		if (parent) {
-
-			parent_sprite = parent->cast_to<SpriteBase3D>();
-			if (parent_sprite) {
-				pI = parent_sprite->children.push_back(this);
-			}
+		parent_sprite = Object::cast_to<SpriteBase3D>(get_parent());
+		if (parent_sprite) {
+			pI = parent_sprite->children.push_back(this);
 		}
 	}
 
@@ -188,17 +185,80 @@ void SpriteBase3D::_queue_update() {
 	if (pending_update)
 		return;
 
+	triangle_mesh.unref();
+	update_gizmo();
+
 	pending_update = true;
 	call_deferred(SceneStringNames::get_singleton()->_im_update);
 }
 
-Rect3 SpriteBase3D::get_aabb() const {
+AABB SpriteBase3D::get_aabb() const {
 
 	return aabb;
 }
 PoolVector<Face3> SpriteBase3D::get_faces(uint32_t p_usage_flags) const {
 
 	return PoolVector<Face3>();
+}
+
+Ref<TriangleMesh> SpriteBase3D::generate_triangle_mesh() const {
+	if (triangle_mesh.is_valid())
+		return triangle_mesh;
+
+	PoolVector<Vector3> faces;
+	faces.resize(6);
+	PoolVector<Vector3>::Write facesw = faces.write();
+
+	Rect2 final_rect = get_item_rect();
+
+	if (final_rect.size.x == 0 || final_rect.size.y == 0)
+		return Ref<TriangleMesh>();
+
+	float pixel_size = get_pixel_size();
+
+	Vector2 vertices[4] = {
+
+		(final_rect.position + Vector2(0, final_rect.size.y)) * pixel_size,
+		(final_rect.position + final_rect.size) * pixel_size,
+		(final_rect.position + Vector2(final_rect.size.x, 0)) * pixel_size,
+		final_rect.position * pixel_size,
+
+	};
+
+	int x_axis = ((axis + 1) % 3);
+	int y_axis = ((axis + 2) % 3);
+
+	if (axis != Vector3::AXIS_Z) {
+		SWAP(x_axis, y_axis);
+
+		for (int i = 0; i < 4; i++) {
+			if (axis == Vector3::AXIS_Y) {
+				vertices[i].y = -vertices[i].y;
+			} else if (axis == Vector3::AXIS_X) {
+				vertices[i].x = -vertices[i].x;
+			}
+		}
+	}
+
+	static const int indices[6] = {
+		0, 1, 2,
+		0, 2, 3
+	};
+
+	for (int j = 0; j < 6; j++) {
+		int i = indices[j];
+		Vector3 vtx;
+		vtx[x_axis] = vertices[i][0];
+		vtx[y_axis] = vertices[i][1];
+		facesw[j] = vtx;
+	}
+
+	facesw = PoolVector<Vector3>::Write();
+
+	triangle_mesh = Ref<TriangleMesh>(memnew(TriangleMesh));
+	triangle_mesh->create(faces);
+
+	return triangle_mesh;
 }
 
 void SpriteBase3D::set_draw_flag(DrawFlags p_flag, bool p_enable) {
@@ -258,6 +318,7 @@ void SpriteBase3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_alpha_cut_mode"), &SpriteBase3D::get_alpha_cut_mode);
 
 	ClassDB::bind_method(D_METHOD("get_item_rect"), &SpriteBase3D::get_item_rect);
+	ClassDB::bind_method(D_METHOD("generate_triangle_mesh"), &SpriteBase3D::generate_triangle_mesh);
 
 	ClassDB::bind_method(D_METHOD("_queue_update"), &SpriteBase3D::_queue_update);
 	ClassDB::bind_method(D_METHOD("_im_update"), &SpriteBase3D::_im_update);
@@ -276,14 +337,14 @@ void SpriteBase3D::_bind_methods() {
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "double_sided"), "set_draw_flag", "get_draw_flag", FLAG_DOUBLE_SIDED);
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "alpha_cut", PROPERTY_HINT_ENUM, "Disabled,Discard,Opaque Pre-Pass"), "set_alpha_cut_mode", "get_alpha_cut_mode");
 
-	BIND_CONSTANT(FLAG_TRANSPARENT);
-	BIND_CONSTANT(FLAG_SHADED);
-	BIND_CONSTANT(FLAG_DOUBLE_SIDED);
-	BIND_CONSTANT(FLAG_MAX);
+	BIND_ENUM_CONSTANT(FLAG_TRANSPARENT);
+	BIND_ENUM_CONSTANT(FLAG_SHADED);
+	BIND_ENUM_CONSTANT(FLAG_DOUBLE_SIDED);
+	BIND_ENUM_CONSTANT(FLAG_MAX);
 
-	BIND_CONSTANT(ALPHA_CUT_DISABLED);
-	BIND_CONSTANT(ALPHA_CUT_DISCARD);
-	BIND_CONSTANT(ALPHA_CUT_OPAQUE_PREPASS);
+	BIND_ENUM_CONSTANT(ALPHA_CUT_DISABLED);
+	BIND_ENUM_CONSTANT(ALPHA_CUT_DISCARD);
+	BIND_ENUM_CONSTANT(ALPHA_CUT_OPAQUE_PREPASS);
 }
 
 SpriteBase3D::SpriteBase3D() {
@@ -298,6 +359,7 @@ SpriteBase3D::SpriteBase3D() {
 	for (int i = 0; i < FLAG_MAX; i++)
 		flags[i] = i == FLAG_TRANSPARENT || i == FLAG_DOUBLE_SIDED;
 
+	alpha_cut = ALPHA_CUT_DISABLED;
 	axis = Vector3::AXIS_Z;
 	pixel_size = 0.01;
 	modulate = Color(1, 1, 1, 1);
@@ -320,36 +382,30 @@ void Sprite3D::_draw() {
 
 	VS::get_singleton()->immediate_clear(immediate);
 	if (!texture.is_valid())
-		return; //no texuture no life
+		return;
 	Vector2 tsize = texture->get_size();
 	if (tsize.x == 0 || tsize.y == 0)
 		return;
 
-	Size2i s;
-	Rect2i src_rect;
+	Rect2 base_rect;
+	if (region)
+		base_rect = region_rect;
+	else
+		base_rect = Rect2(0, 0, texture->get_width(), texture->get_height());
 
-	if (region) {
+	Size2 frame_size = base_rect.size / Size2(hframes, vframes);
+	Point2 frame_offset = Point2(frame % hframes, frame / hframes);
+	frame_offset *= frame_size;
 
-		s = region_rect.size;
-		src_rect = region_rect;
-	} else {
-		s = texture->get_size();
-		s = s / Size2i(hframes, vframes);
-
-		src_rect.size = s;
-		src_rect.position.x += (frame % hframes) * s.x;
-		src_rect.position.y += (frame / hframes) * s.y;
-	}
-
-	Point2i ofs = get_offset();
+	Point2 dest_offset = get_offset();
 	if (is_centered())
-		ofs -= s / 2;
+		dest_offset -= frame_size / 2;
 
-	Rect2i dst_rect(ofs, s);
-
+	Rect2 src_rect(base_rect.position + frame_offset, frame_size);
+	Rect2 final_dst_rect(dest_offset, frame_size);
 	Rect2 final_rect;
 	Rect2 final_src_rect;
-	if (!texture->get_rect_region(dst_rect, src_rect, final_rect, final_src_rect))
+	if (!texture->get_rect_region(final_dst_rect, src_rect, final_rect, final_src_rect))
 		return;
 
 	if (final_rect.size.x == 0 || final_rect.size.y == 0)
@@ -368,11 +424,21 @@ void Sprite3D::_draw() {
 		final_rect.position * pixel_size,
 
 	};
+
+	Vector2 src_tsize = tsize;
+
+	// Properly setup UVs for impostor textures (AtlasTexture).
+	Ref<AtlasTexture> atlas_tex = texture;
+	if (atlas_tex != NULL) {
+		src_tsize[0] = atlas_tex->get_atlas()->get_width();
+		src_tsize[1] = atlas_tex->get_atlas()->get_height();
+	}
+
 	Vector2 uvs[4] = {
-		final_src_rect.position / tsize,
-		(final_src_rect.position + Vector2(final_src_rect.size.x, 0)) / tsize,
-		(final_src_rect.position + final_src_rect.size) / tsize,
-		(final_src_rect.position + Vector2(0, final_src_rect.size.y)) / tsize,
+		final_src_rect.position / src_tsize,
+		(final_src_rect.position + Vector2(final_src_rect.size.x, 0)) / src_tsize,
+		(final_src_rect.position + final_src_rect.size) / src_tsize,
+		(final_src_rect.position + Vector2(0, final_src_rect.size.y)) / src_tsize,
 	};
 
 	if (is_flipped_h()) {
@@ -388,6 +454,13 @@ void Sprite3D::_draw() {
 	Vector3 normal;
 	int axis = get_axis();
 	normal[axis] = 1.0;
+
+	Plane tangent;
+	if (axis == Vector3::AXIS_X) {
+		tangent = Plane(0, 0, -1, 1);
+	} else {
+		tangent = Plane(1, 0, 0, 1);
+	}
 
 	RID mat = SpatialMaterial::get_material_rid_for_2d(get_draw_flag(FLAG_SHADED), get_draw_flag(FLAG_TRANSPARENT), get_draw_flag(FLAG_DOUBLE_SIDED), get_alpha_cut_mode() == ALPHA_CUT_DISCARD, get_alpha_cut_mode() == ALPHA_CUT_OPAQUE_PREPASS);
 	VS::get_singleton()->immediate_set_material(immediate, mat);
@@ -411,10 +484,11 @@ void Sprite3D::_draw() {
 		}
 	}
 
-	Rect3 aabb;
+	AABB aabb;
 
 	for (int i = 0; i < 4; i++) {
 		VS::get_singleton()->immediate_normal(immediate, normal);
+		VS::get_singleton()->immediate_tangent(immediate, tangent);
 		VS::get_singleton()->immediate_color(immediate, color);
 		VS::get_singleton()->immediate_uv(immediate, uvs[i]);
 
@@ -540,7 +614,7 @@ Rect2 Sprite3D::get_item_rect() const {
 		s = s / Point2(hframes, vframes);
 	}
 
-	Point2i ofs = get_offset();
+	Point2 ofs = get_offset();
 	if (is_centered())
 		ofs -= s / 2;
 
@@ -602,219 +676,6 @@ Sprite3D::Sprite3D() {
 
 ////////////////////////////////////////
 
-#if 0
-
-void AnimatedSprite3D::_draw() {
-
-	RID immediate = get_immediate();
-	VS::get_singleton()->immediate_clear(immediate);
-
-	if (!frames.is_valid() || !frames->get_frame_count(animation) || frame<0 || frame>=frames->get_frame_count(animation)) {
-		return;
-	}
-
-	Ref<Texture> texture = frames->get_frame(animation,frame);
-	if (!texture.is_valid())
-		return; //no texuture no life
-	Vector2 tsize = texture->get_size();
-	if (tsize.x==0 || tsize.y==0)
-		return;
-
-	Size2i s=tsize;
-	Rect2i src_rect;
-
-	src_rect.size=s;
-
-	Point2i ofs=get_offset();
-	if (is_centered())
-		ofs-=s/2;
-
-	Rect2i dst_rect(ofs,s);
-
-
-	Rect2 final_rect;
-	Rect2 final_src_rect;
-	if (!texture->get_rect_region(dst_rect,src_rect,final_rect,final_src_rect))
-		return;
-
-
-	if (final_rect.size.x==0 || final_rect.size.y==0)
-		return;
-
-	Color color=_get_color_accum();
-	color.a*=get_opacity();
-
-	float pixel_size=get_pixel_size();
-
-	Vector2 vertices[4]={
-
-		(final_rect.pos+Vector2(0,final_rect.size.y)) * pixel_size,
-		(final_rect.pos+final_rect.size) * pixel_size,
-		(final_rect.pos+Vector2(final_rect.size.x,0)) * pixel_size,
-		final_rect.pos * pixel_size,
-
-
-	};
-	Vector2 uvs[4]={
-		final_src_rect.pos / tsize,
-		(final_src_rect.pos+Vector2(final_src_rect.size.x,0)) / tsize,
-		(final_src_rect.pos+final_src_rect.size) / tsize,
-		(final_src_rect.pos+Vector2(0,final_src_rect.size.y)) / tsize,
-	};
-
-	if (is_flipped_h()) {
-		SWAP(uvs[0],uvs[1]);
-		SWAP(uvs[2],uvs[3]);
-	}
-	if (is_flipped_v()) {
-
-		SWAP(uvs[0],uvs[3]);
-		SWAP(uvs[1],uvs[2]);
-	}
-
-
-	Vector3 normal;
-	int axis = get_axis();
-	normal[axis]=1.0;
-
-	RID mat = VS::get_singleton()->material_2d_get(get_draw_flag(FLAG_SHADED),get_draw_flag(FLAG_TRANSPARENT),get_alpha_cut_mode()==ALPHA_CUT_DISCARD,get_alpha_cut_mode()==ALPHA_CUT_OPAQUE_PREPASS);
-	VS::get_singleton()->immediate_set_material(immediate,mat);
-
-	VS::get_singleton()->immediate_begin(immediate,VS::PRIMITIVE_TRIANGLE_FAN,texture->get_rid());
-
-	int x_axis = ((axis + 1) % 3);
-	int y_axis = ((axis + 2) % 3);
-
-	if (axis!=Vector3::AXIS_Z) {
-		SWAP(x_axis,y_axis);
-
-		for(int i=0;i<4;i++) {
-			//uvs[i] = Vector2(1.0,1.0)-uvs[i];
-			//SWAP(vertices[i].x,vertices[i].y);
-			if (axis==Vector3::AXIS_Y) {
-				vertices[i].y = - vertices[i].y;
-			} else if (axis==Vector3::AXIS_X) {
-				vertices[i].x = - vertices[i].x;
-			}
-		}
-	}
-
-	AABB aabb;
-
-	for(int i=0;i<4;i++) {
-		VS::get_singleton()->immediate_normal(immediate,normal);
-		VS::get_singleton()->immediate_color(immediate,color);
-		VS::get_singleton()->immediate_uv(immediate,uvs[i]);
-
-		Vector3 vtx;
-		vtx[x_axis]=vertices[i][0];
-		vtx[y_axis]=vertices[i][1];
-		VS::get_singleton()->immediate_vertex(immediate,vtx);
-		if (i==0) {
-			aabb.pos=vtx;
-			aabb.size=Vector3();
-		} else {
-			aabb.expand_to(vtx);
-		}
-	}
-	set_aabb(aabb);
-	VS::get_singleton()->immediate_end(immediate);
-
-}
-
-void AnimatedSprite3D::_bind_methods(){
-
-	ClassDB::bind_method(D_METHOD("set_sprite_frames","sprite_frames"),&AnimatedSprite3D::set_sprite_frames);
-	ClassDB::bind_method(D_METHOD("get_sprite_frames"),&AnimatedSprite3D::get_sprite_frames);
-	ClassDB::bind_method(D_METHOD("set_frame","frame"),&AnimatedSprite3D::set_frame);
-	ClassDB::bind_method(D_METHOD("get_frame"),&AnimatedSprite3D::get_frame);
-
-	ADD_PROPERTY( PropertyInfo( Variant::OBJECT, "frames", PROPERTY_HINT_RESOURCE_TYPE,"SpriteFrames"), "set_sprite_frames","get_sprite_frames");
-	ADD_PROPERTY( PropertyInfo( Variant::INT, "frame",PROPERTY_HINT_SPRITE_FRAME), "set_frame","get_frame");
-
-	ADD_SIGNAL(MethodInfo("frame_changed"));
-
-}
-
-
-
-
-void AnimatedSprite3D::set_sprite_frames(const Ref<SpriteFrames>& p_sprite_frames) {
-
-
-	if (frames==p_sprite_frames)
-		return;
-
-	if (frames.is_valid())
-		frames->disconnect("changed",this,"_queue_update");
-	frames=p_sprite_frames;
-	if (frames.is_valid())
-		frames->connect("changed",this,"_queue_update");
-
-	if (!frames.is_valid() || frame >=frames->get_frame_count(animation)) {
-		frame=0;
-
-	}
-	_queue_update();
-
-}
-
-Ref<SpriteFrames> AnimatedSprite3D::get_sprite_frames() const{
-
-	return frames;
-}
-
-void AnimatedSprite3D::set_frame(int p_frame){
-
-	if (frames.is_null())
-		return;
-
-	ERR_FAIL_INDEX(p_frame,frames->get_frame_count(animation));
-
-	if (frame==p_frame)
-		return;
-
-	frame=p_frame;
-	_queue_update();
-	emit_signal(SceneStringNames::get_singleton()->frame_changed);
-
-}
-int AnimatedSprite3D::get_frame() const{
-
-	return frame;
-}
-
-Rect2 AnimatedSprite3D::get_item_rect() const {
-
-	if (!frames.is_valid() || !frames->get_frame_count(animation) || frame<0 || frame>=frames->get_frame_count(animation)) {
-		return Rect2(0,0,1,1);
-	}
-
-	Ref<Texture> t = frames->get_frame(animation,frame);
-	if (t.is_null())
-		return Rect2(0,0,1,1);
-	Size2i s = t->get_size();
-
-	Point2i ofs=get_offset();
-	if (is_centered())
-		ofs-=s/2;
-
-	if (s==Size2(0,0))
-		s=Size2(1,1);
-
-	return Rect2(ofs,s);
-}
-
-
-
-AnimatedSprite3D::AnimatedSprite3D() {
-
-	animation="current";
-	frame=0;
-}
-
-#endif
-
 void AnimatedSprite3D::_draw() {
 
 	RID immediate = get_immediate();
@@ -840,15 +701,15 @@ void AnimatedSprite3D::_draw() {
 		return;
 
 	Size2i s = tsize;
-	Rect2i src_rect;
+	Rect2 src_rect;
 
 	src_rect.size = s;
 
-	Point2i ofs = get_offset();
+	Point2 ofs = get_offset();
 	if (is_centered())
 		ofs -= s / 2;
 
-	Rect2i dst_rect(ofs, s);
+	Rect2 dst_rect(ofs, s);
 
 	Rect2 final_rect;
 	Rect2 final_src_rect;
@@ -871,11 +732,21 @@ void AnimatedSprite3D::_draw() {
 		final_rect.position * pixel_size,
 
 	};
+
+	Vector2 src_tsize = tsize;
+
+	// Properly setup UVs for impostor textures (AtlasTexture).
+	Ref<AtlasTexture> atlas_tex = texture;
+	if (atlas_tex != NULL) {
+		src_tsize[0] = atlas_tex->get_atlas()->get_width();
+		src_tsize[1] = atlas_tex->get_atlas()->get_height();
+	}
+
 	Vector2 uvs[4] = {
-		final_src_rect.position / tsize,
-		(final_src_rect.position + Vector2(final_src_rect.size.x, 0)) / tsize,
-		(final_src_rect.position + final_src_rect.size) / tsize,
-		(final_src_rect.position + Vector2(0, final_src_rect.size.y)) / tsize,
+		final_src_rect.position / src_tsize,
+		(final_src_rect.position + Vector2(final_src_rect.size.x, 0)) / src_tsize,
+		(final_src_rect.position + final_src_rect.size) / src_tsize,
+		(final_src_rect.position + Vector2(0, final_src_rect.size.y)) / src_tsize,
 	};
 
 	if (is_flipped_h()) {
@@ -891,6 +762,13 @@ void AnimatedSprite3D::_draw() {
 	Vector3 normal;
 	int axis = get_axis();
 	normal[axis] = 1.0;
+
+	Plane tangent;
+	if (axis == Vector3::AXIS_X) {
+		tangent = Plane(0, 0, -1, -1);
+	} else {
+		tangent = Plane(1, 0, 0, -1);
+	}
 
 	RID mat = SpatialMaterial::get_material_rid_for_2d(get_draw_flag(FLAG_SHADED), get_draw_flag(FLAG_TRANSPARENT), get_draw_flag(FLAG_DOUBLE_SIDED), get_alpha_cut_mode() == ALPHA_CUT_DISCARD, get_alpha_cut_mode() == ALPHA_CUT_OPAQUE_PREPASS);
 
@@ -915,10 +793,11 @@ void AnimatedSprite3D::_draw() {
 		}
 	}
 
-	Rect3 aabb;
+	AABB aabb;
 
 	for (int i = 0; i < 4; i++) {
 		VS::get_singleton()->immediate_normal(immediate, normal);
+		VS::get_singleton()->immediate_tangent(immediate, tangent);
 		VS::get_singleton()->immediate_color(immediate, color);
 		VS::get_singleton()->immediate_uv(immediate, uvs[i]);
 
@@ -1026,63 +905,6 @@ void AnimatedSprite3D::_notification(int p_what) {
 				timeout -= to_process;
 			}
 		} break;
-#if 0
-		case NOTIFICATION_DRAW: {
-
-			if (frames.is_null()) {
-				print_line("no draw no faemos");
-				return;
-			}
-
-			if (frame<0) {
-				print_line("no draw frame <0");
-				return;
-			}
-
-			if (!frames->has_animation(animation)) {
-				print_line("no draw no anim: "+String(animation));
-				return;
-			}
-
-
-
-			Ref<Texture> texture = frames->get_frame(animation,frame);
-			if (texture.is_null()) {
-				print_line("no draw texture is null");
-				return;
-			}
-
-			//print_line("DECIDED TO DRAW");
-
-			RID ci = get_canvas_item();
-
-			/*
-			texture->draw(ci,Point2());
-			break;
-			*/
-
-			Size2i s;
-			s = texture->get_size();
-			Point2 ofs=offset;
-			if (centered)
-				ofs-=s/2;
-
-			if (OS::get_singleton()->get_use_pixel_snap()) {
-				ofs=ofs.floor();
-			}
-			Rect2 dst_rect(ofs,s);
-
-			if (hflip)
-				dst_rect.size.x=-dst_rect.size.x;
-			if (vflip)
-				dst_rect.size.y=-dst_rect.size.y;
-
-			//texture->draw_rect(ci,dst_rect,false,modulate);
-			texture->draw_rect_region(ci,dst_rect,Rect2(Vector2(),texture->get_size()),modulate);
-			//VisualServer::get_singleton()->canvas_item_add_texture_rect_region(ci,dst_rect,texture->get_rid(),src_rect,modulate);
-
-		} break;
-#endif
 	}
 }
 
@@ -1153,7 +975,7 @@ Rect2 AnimatedSprite3D::get_item_rect() const {
 		return Rect2(0, 0, 1, 1);
 	Size2i s = t->get_size();
 
-	Point2 ofs = offset;
+	Point2 ofs = get_offset();
 	if (centered)
 		ofs -= s / 2;
 
@@ -1266,10 +1088,10 @@ void AnimatedSprite3D::_bind_methods() {
 
 	ADD_SIGNAL(MethodInfo("frame_changed"));
 
-	ADD_PROPERTYNZ(PropertyInfo(Variant::OBJECT, "frames", PROPERTY_HINT_RESOURCE_TYPE, "SpriteFrames"), "set_sprite_frames", "get_sprite_frames");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "frames", PROPERTY_HINT_RESOURCE_TYPE, "SpriteFrames"), "set_sprite_frames", "get_sprite_frames");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "animation"), "set_animation", "get_animation");
-	ADD_PROPERTYNZ(PropertyInfo(Variant::INT, "frame", PROPERTY_HINT_SPRITE_FRAME), "set_frame", "get_frame");
-	ADD_PROPERTYNZ(PropertyInfo(Variant::BOOL, "playing"), "_set_playing", "_is_playing");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "frame", PROPERTY_HINT_SPRITE_FRAME), "set_frame", "get_frame");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "playing"), "_set_playing", "_is_playing");
 }
 
 AnimatedSprite3D::AnimatedSprite3D() {

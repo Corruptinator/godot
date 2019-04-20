@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,13 +27,19 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef AUDIO_SERVER_H
 #define AUDIO_SERVER_H
 
-#include "audio_frame.h"
-#include "object.h"
+#include "core/math/audio_frame.h"
+#include "core/object.h"
+#include "core/os/os.h"
+#include "core/variant.h"
 #include "servers/audio/audio_effect.h"
-#include "variant.h"
+
+class AudioDriverDummy;
+class AudioStream;
+class AudioStreamSample;
 
 class AudioDriver {
 
@@ -41,18 +47,41 @@ class AudioDriver {
 	uint64_t _last_mix_time;
 	uint64_t _mix_amount;
 
+#ifdef DEBUG_ENABLED
+	uint64_t prof_ticks;
+	uint64_t prof_time;
+#endif
+
 protected:
+	Vector<int32_t> input_buffer;
+	unsigned int input_position;
+	unsigned int input_size;
+
 	void audio_server_process(int p_frames, int32_t *p_buffer, bool p_update_mix_time = true);
 	void update_mix_time(int p_frames);
+	void input_buffer_init(int driver_buffer_frames);
+	void input_buffer_write(int32_t sample);
+
+#ifdef DEBUG_ENABLED
+	_FORCE_INLINE_ void start_counting_ticks() { prof_ticks = OS::get_singleton()->get_ticks_usec(); }
+	_FORCE_INLINE_ void stop_counting_ticks() { prof_time += OS::get_singleton()->get_ticks_usec() - prof_ticks; }
+#else
+	_FORCE_INLINE_ void start_counting_ticks() {}
+	_FORCE_INLINE_ void stop_counting_ticks() {}
+#endif
 
 public:
 	double get_mix_time() const; //useful for video -> audio sync
 
 	enum SpeakerMode {
 		SPEAKER_MODE_STEREO,
+		SPEAKER_SURROUND_31,
 		SPEAKER_SURROUND_51,
 		SPEAKER_SURROUND_71,
 	};
+
+	static const int DEFAULT_MIX_RATE = 44100;
+	static const int DEFAULT_OUTPUT_LATENCY = 15;
 
 	static AudioDriver *get_singleton();
 	void set_singleton();
@@ -63,11 +92,32 @@ public:
 	virtual void start() = 0;
 	virtual int get_mix_rate() const = 0;
 	virtual SpeakerMode get_speaker_mode() const = 0;
+	virtual Array get_device_list();
+	virtual String get_device();
+	virtual void set_device(String device) {}
 	virtual void lock() = 0;
 	virtual void unlock() = 0;
 	virtual void finish() = 0;
 
+	virtual Error capture_start() { return FAILED; }
+	virtual Error capture_stop() { return FAILED; }
+	virtual void capture_set_device(const String &p_name) {}
+	virtual String capture_get_device() { return "Default"; }
+	virtual Array capture_get_device_list(); // TODO: convert this and get_device_list to PoolStringArray
+
 	virtual float get_latency() { return 0; }
+
+	SpeakerMode get_speaker_mode_by_total_channels(int p_channels) const;
+	int get_total_channels_by_speaker_mode(SpeakerMode) const;
+
+	Vector<int32_t> get_input_buffer() { return input_buffer; }
+	unsigned int get_input_position() { return input_position; }
+	unsigned int get_input_size() { return input_size; }
+
+#ifdef DEBUG_ENABLED
+	uint64_t get_profiling_time() const { return prof_time; }
+	void reset_profiling_time() { prof_time = 0; }
+#endif
 
 	AudioDriver();
 	virtual ~AudioDriver() {}
@@ -83,8 +133,11 @@ class AudioDriverManager {
 	static AudioDriver *drivers[MAX_DRIVERS];
 	static int driver_count;
 
+	static AudioDriverDummy dummy_driver;
+
 public:
 	static void add_driver(AudioDriver *p_driver);
+	static void initialize(int p_driver);
 	static int get_driver_count();
 	static AudioDriver *get_driver(int p_driver);
 };
@@ -98,6 +151,7 @@ public:
 	//re-expose this her, as AudioDriver is not exposed to script
 	enum SpeakerMode {
 		SPEAKER_MODE_STEREO,
+		SPEAKER_SURROUND_31,
 		SPEAKER_SURROUND_51,
 		SPEAKER_SURROUND_71,
 	};
@@ -112,10 +166,14 @@ private:
 	uint32_t buffer_size;
 	uint64_t mix_count;
 	uint64_t mix_frames;
+#ifdef DEBUG_ENABLED
+	uint64_t prof_time;
+#endif
 
 	float channel_disable_threshold_db;
 	uint32_t channel_disable_frames;
 
+	int channel_count;
 	int to_mix;
 
 	struct Bus {
@@ -124,6 +182,8 @@ private:
 		bool solo;
 		bool mute;
 		bool bypass;
+
+		bool soloed;
 
 		//Each channel is a stereo pair.
 		struct Channel {
@@ -146,6 +206,9 @@ private:
 		struct Effect {
 			Ref<AudioEffect> effect;
 			bool enabled;
+#ifdef DEBUG_ENABLED
+			uint64_t prof_time;
+#endif
 		};
 
 		Vector<Effect> effects;
@@ -157,15 +220,6 @@ private:
 	Vector<Vector<AudioFrame> > temp_buffer; //temp_buffer for each level
 	Vector<Bus *> buses;
 	Map<StringName, Bus *> bus_map;
-
-	_FORCE_INLINE_ int _get_channel_count() const {
-		switch (AudioDriver::get_singleton()->get_speaker_mode()) {
-			case AudioDriver::SPEAKER_MODE_STEREO: return 1;
-			case AudioDriver::SPEAKER_SURROUND_51: return 3;
-			case AudioDriver::SPEAKER_SURROUND_71: return 4;
-		}
-		ERR_FAIL_V(1);
-	}
 
 	void _update_bus_effects(int p_bus);
 
@@ -179,7 +233,24 @@ private:
 
 	Mutex *audio_data_lock;
 
+	float output_latency;
+	uint64_t output_latency_ticks;
+
+	void init_channels_and_buffers();
+
 	void _mix_step();
+
+#if 0
+	struct AudioInBlock {
+
+		Ref<AudioStreamSample> audio_stream;
+		int current_position;
+		bool loops;
+	};
+
+	Map<StringName, AudioInBlock *> audio_in_block_map;
+	Vector<AudioInBlock *> audio_in_blocks;
+#endif
 
 	struct CallbackItem {
 
@@ -192,6 +263,7 @@ private:
 	};
 
 	Set<CallbackItem> callbacks;
+	Set<CallbackItem> update_callbacks;
 
 	friend class AudioDriver;
 	void _driver_process(int p_frames, int32_t *p_buffer);
@@ -200,7 +272,18 @@ protected:
 	static void _bind_methods();
 
 public:
+	_FORCE_INLINE_ int get_channel_count() const {
+		switch (get_speaker_mode()) {
+			case SPEAKER_MODE_STEREO: return 1;
+			case SPEAKER_SURROUND_31: return 2;
+			case SPEAKER_SURROUND_51: return 3;
+			case SPEAKER_SURROUND_71: return 4;
+		}
+		ERR_FAIL_V(1);
+	}
+
 	//do not use from outside audio thread
+	bool thread_has_channel_mix_buffer(int p_bus, int p_buffer) const;
 	AudioFrame *thread_get_channel_mix_buffer(int p_bus, int p_buffer);
 	int thread_get_mix_buffer_size() const;
 	int thread_find_bus_index(const StringName &p_name);
@@ -216,6 +299,8 @@ public:
 	void set_bus_name(int p_bus, const String &p_name);
 	String get_bus_name(int p_bus) const;
 	int get_bus_index(const StringName &p_bus_name) const;
+
+	int get_bus_channels(int p_bus) const;
 
 	void set_bus_volume_db(int p_bus, float p_volume_db);
 	float get_bus_volume_db(int p_bus) const;
@@ -237,6 +322,7 @@ public:
 
 	int get_bus_effect_count(int p_bus);
 	Ref<AudioEffect> get_bus_effect(int p_bus, int p_effect);
+	Ref<AudioEffectInstance> get_bus_effect_instance(int p_bus, int p_effect, int p_channel = 0);
 
 	void swap_bus_effects(int p_bus, int p_effect, int p_by_effect);
 
@@ -277,9 +363,21 @@ public:
 	void add_callback(AudioCallback p_callback, void *p_userdata);
 	void remove_callback(AudioCallback p_callback, void *p_userdata);
 
+	void add_update_callback(AudioCallback p_callback, void *p_userdata);
+	void remove_update_callback(AudioCallback p_callback, void *p_userdata);
+
 	void set_bus_layout(const Ref<AudioBusLayout> &p_bus_layout);
 	Ref<AudioBusLayout> generate_bus_layout() const;
 
+	Array get_device_list();
+	String get_device();
+	void set_device(String device);
+
+	Array capture_get_device_list();
+	String capture_get_device();
+	void capture_set_device(const String &p_name);
+
+	float get_output_latency() { return output_latency; }
 	AudioServer();
 	virtual ~AudioServer();
 };

@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "area_2d.h"
 #include "scene/scene_string_names.h"
 #include "servers/audio_server.h"
@@ -116,7 +117,7 @@ real_t Area2D::get_priority() const {
 void Area2D::_body_enter_tree(ObjectID p_id) {
 
 	Object *obj = ObjectDB::get_instance(p_id);
-	Node *node = obj ? obj->cast_to<Node>() : NULL;
+	Node *node = Object::cast_to<Node>(obj);
 	ERR_FAIL_COND(!node);
 
 	Map<ObjectID, BodyState>::Element *E = body_map.find(p_id);
@@ -134,7 +135,7 @@ void Area2D::_body_enter_tree(ObjectID p_id) {
 void Area2D::_body_exit_tree(ObjectID p_id) {
 
 	Object *obj = ObjectDB::get_instance(p_id);
-	Node *node = obj ? obj->cast_to<Node>() : NULL;
+	Node *node = Object::cast_to<Node>(obj);
 	ERR_FAIL_COND(!node);
 	Map<ObjectID, BodyState>::Element *E = body_map.find(p_id);
 	ERR_FAIL_COND(!E);
@@ -153,11 +154,13 @@ void Area2D::_body_inout(int p_status, const RID &p_body, int p_instance, int p_
 	ObjectID objid = p_instance;
 
 	Object *obj = ObjectDB::get_instance(objid);
-	Node *node = obj ? obj->cast_to<Node>() : NULL;
+	Node *node = Object::cast_to<Node>(obj);
 
 	Map<ObjectID, BodyState>::Element *E = body_map.find(objid);
 
-	ERR_FAIL_COND(!body_in && !E);
+	if (!body_in && !E) {
+		return; //does not exist because it was likely removed from the tree
+	}
 
 	locked = true;
 
@@ -169,7 +172,7 @@ void Area2D::_body_inout(int p_status, const RID &p_body, int p_instance, int p_
 			E->get().in_tree = node && node->is_inside_tree();
 			if (node) {
 				node->connect(SceneStringNames::get_singleton()->tree_entered, this, SceneStringNames::get_singleton()->_body_enter_tree, make_binds(objid));
-				node->connect(SceneStringNames::get_singleton()->tree_exited, this, SceneStringNames::get_singleton()->_body_exit_tree, make_binds(objid));
+				node->connect(SceneStringNames::get_singleton()->tree_exiting, this, SceneStringNames::get_singleton()->_body_exit_tree, make_binds(objid));
 				if (E->get().in_tree) {
 					emit_signal(SceneStringNames::get_singleton()->body_entered, node);
 				}
@@ -196,7 +199,7 @@ void Area2D::_body_inout(int p_status, const RID &p_body, int p_instance, int p_
 
 			if (node) {
 				node->disconnect(SceneStringNames::get_singleton()->tree_entered, this, SceneStringNames::get_singleton()->_body_enter_tree);
-				node->disconnect(SceneStringNames::get_singleton()->tree_exited, this, SceneStringNames::get_singleton()->_body_exit_tree);
+				node->disconnect(SceneStringNames::get_singleton()->tree_exiting, this, SceneStringNames::get_singleton()->_body_exit_tree);
 				if (E->get().in_tree)
 					emit_signal(SceneStringNames::get_singleton()->body_exited, obj);
 			}
@@ -217,7 +220,7 @@ void Area2D::_body_inout(int p_status, const RID &p_body, int p_instance, int p_
 void Area2D::_area_enter_tree(ObjectID p_id) {
 
 	Object *obj = ObjectDB::get_instance(p_id);
-	Node *node = obj ? obj->cast_to<Node>() : NULL;
+	Node *node = Object::cast_to<Node>(obj);
 	ERR_FAIL_COND(!node);
 
 	Map<ObjectID, AreaState>::Element *E = area_map.find(p_id);
@@ -235,7 +238,7 @@ void Area2D::_area_enter_tree(ObjectID p_id) {
 void Area2D::_area_exit_tree(ObjectID p_id) {
 
 	Object *obj = ObjectDB::get_instance(p_id);
-	Node *node = obj ? obj->cast_to<Node>() : NULL;
+	Node *node = Object::cast_to<Node>(obj);
 	ERR_FAIL_COND(!node);
 	Map<ObjectID, AreaState>::Element *E = area_map.find(p_id);
 	ERR_FAIL_COND(!E);
@@ -254,12 +257,13 @@ void Area2D::_area_inout(int p_status, const RID &p_area, int p_instance, int p_
 	ObjectID objid = p_instance;
 
 	Object *obj = ObjectDB::get_instance(objid);
-	Node *node = obj ? obj->cast_to<Node>() : NULL;
+	Node *node = Object::cast_to<Node>(obj);
 
 	Map<ObjectID, AreaState>::Element *E = area_map.find(objid);
 
-	ERR_FAIL_COND(!area_in && !E);
-
+	if (!area_in && !E) {
+		return; //likely removed from the tree
+	}
 	locked = true;
 
 	if (area_in) {
@@ -270,7 +274,7 @@ void Area2D::_area_inout(int p_status, const RID &p_area, int p_instance, int p_
 			E->get().in_tree = node && node->is_inside_tree();
 			if (node) {
 				node->connect(SceneStringNames::get_singleton()->tree_entered, this, SceneStringNames::get_singleton()->_area_enter_tree, make_binds(objid));
-				node->connect(SceneStringNames::get_singleton()->tree_exited, this, SceneStringNames::get_singleton()->_area_exit_tree, make_binds(objid));
+				node->connect(SceneStringNames::get_singleton()->tree_exiting, this, SceneStringNames::get_singleton()->_area_exit_tree, make_binds(objid));
 				if (E->get().in_tree) {
 					emit_signal(SceneStringNames::get_singleton()->area_entered, node);
 				}
@@ -297,7 +301,7 @@ void Area2D::_area_inout(int p_status, const RID &p_area, int p_instance, int p_
 
 			if (node) {
 				node->disconnect(SceneStringNames::get_singleton()->tree_entered, this, SceneStringNames::get_singleton()->_area_enter_tree);
-				node->disconnect(SceneStringNames::get_singleton()->tree_exited, this, SceneStringNames::get_singleton()->_area_exit_tree);
+				node->disconnect(SceneStringNames::get_singleton()->tree_exiting, this, SceneStringNames::get_singleton()->_area_exit_tree);
 				if (E->get().in_tree)
 					emit_signal(SceneStringNames::get_singleton()->area_exited, obj);
 			}
@@ -330,14 +334,14 @@ void Area2D::_clear_monitoring() {
 		for (Map<ObjectID, BodyState>::Element *E = bmcopy.front(); E; E = E->next()) {
 
 			Object *obj = ObjectDB::get_instance(E->key());
-			Node *node = obj ? obj->cast_to<Node>() : NULL;
+			Node *node = Object::cast_to<Node>(obj);
 
 			if (!node) //node may have been deleted in previous frame or at other legiminate point
 				continue;
 			//ERR_CONTINUE(!node);
 
 			node->disconnect(SceneStringNames::get_singleton()->tree_entered, this, SceneStringNames::get_singleton()->_body_enter_tree);
-			node->disconnect(SceneStringNames::get_singleton()->tree_exited, this, SceneStringNames::get_singleton()->_body_exit_tree);
+			node->disconnect(SceneStringNames::get_singleton()->tree_exiting, this, SceneStringNames::get_singleton()->_body_exit_tree);
 
 			if (!E->get().in_tree)
 				continue;
@@ -360,14 +364,14 @@ void Area2D::_clear_monitoring() {
 		for (Map<ObjectID, AreaState>::Element *E = bmcopy.front(); E; E = E->next()) {
 
 			Object *obj = ObjectDB::get_instance(E->key());
-			Node *node = obj ? obj->cast_to<Node>() : NULL;
+			Node *node = Object::cast_to<Node>(obj);
 
 			if (!node) //node may have been deleted in previous frame or at other legiminate point
 				continue;
 			//ERR_CONTINUE(!node);
 
 			node->disconnect(SceneStringNames::get_singleton()->tree_entered, this, SceneStringNames::get_singleton()->_area_enter_tree);
-			node->disconnect(SceneStringNames::get_singleton()->tree_exited, this, SceneStringNames::get_singleton()->_area_exit_tree);
+			node->disconnect(SceneStringNames::get_singleton()->tree_exiting, this, SceneStringNames::get_singleton()->_area_exit_tree);
 
 			if (!E->get().in_tree)
 				continue;
@@ -398,7 +402,7 @@ void Area2D::set_monitoring(bool p_enable) {
 	if (p_enable == monitoring)
 		return;
 	if (locked) {
-		ERR_EXPLAIN("Function blocked during in/out signal. Use call_deferred(\"set_enable_monitoring\",true/false)");
+		ERR_EXPLAIN("Function blocked during in/out signal. Use set_deferred(\"monitoring\",true/false)");
 	}
 	ERR_FAIL_COND(locked);
 
@@ -423,10 +427,10 @@ bool Area2D::is_monitoring() const {
 
 void Area2D::set_monitorable(bool p_enable) {
 
-	if (locked) {
-		ERR_EXPLAIN("This function can't be used during the in/out signal.");
+	if (locked || (is_inside_tree() && Physics2DServer::get_singleton()->is_flushing_queries())) {
+		ERR_EXPLAIN("Function blocked during in/out signal. Use set_deferred(\"monitorable\",true/false)");
+		ERR_FAIL();
 	}
-	ERR_FAIL_COND(locked);
 
 	if (p_enable == monitorable)
 		return;
@@ -557,12 +561,12 @@ bool Area2D::is_overriding_audio_bus() const {
 	return audio_bus_override;
 }
 
-void Area2D::set_audio_bus(const StringName &p_audio_bus) {
+void Area2D::set_audio_bus_name(const StringName &p_audio_bus) {
 
 	audio_bus = p_audio_bus;
 }
 
-StringName Area2D::get_audio_bus() const {
+StringName Area2D::get_audio_bus_name() const {
 
 	for (int i = 0; i < AudioServer::get_singleton()->get_bus_count(); i++) {
 		if (AudioServer::get_singleton()->get_bus_name(i) == audio_bus) {
@@ -596,7 +600,7 @@ void Area2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_area_enter_tree", "id"), &Area2D::_area_enter_tree);
 	ClassDB::bind_method(D_METHOD("_area_exit_tree", "id"), &Area2D::_area_exit_tree);
 
-	ClassDB::bind_method(D_METHOD("set_space_override_mode", "enable"), &Area2D::set_space_override_mode);
+	ClassDB::bind_method(D_METHOD("set_space_override_mode", "space_override_mode"), &Area2D::set_space_override_mode);
 	ClassDB::bind_method(D_METHOD("get_space_override_mode"), &Area2D::get_space_override_mode);
 
 	ClassDB::bind_method(D_METHOD("set_gravity_is_point", "enable"), &Area2D::set_gravity_is_point);
@@ -644,8 +648,8 @@ void Area2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("overlaps_body", "body"), &Area2D::overlaps_body);
 	ClassDB::bind_method(D_METHOD("overlaps_area", "area"), &Area2D::overlaps_area);
 
-	ClassDB::bind_method(D_METHOD("set_audio_bus", "name"), &Area2D::set_audio_bus);
-	ClassDB::bind_method(D_METHOD("get_audio_bus"), &Area2D::get_audio_bus);
+	ClassDB::bind_method(D_METHOD("set_audio_bus_name", "name"), &Area2D::set_audio_bus_name);
+	ClassDB::bind_method(D_METHOD("get_audio_bus_name"), &Area2D::get_audio_bus_name);
 
 	ClassDB::bind_method(D_METHOD("set_audio_bus_override", "enable"), &Area2D::set_audio_bus_override);
 	ClassDB::bind_method(D_METHOD("is_overriding_audio_bus"), &Area2D::is_overriding_audio_bus);
@@ -663,27 +667,33 @@ void Area2D::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("area_entered", PropertyInfo(Variant::OBJECT, "area", PROPERTY_HINT_RESOURCE_TYPE, "Area2D")));
 	ADD_SIGNAL(MethodInfo("area_exited", PropertyInfo(Variant::OBJECT, "area", PROPERTY_HINT_RESOURCE_TYPE, "Area2D")));
 
-	ADD_PROPERTYNZ(PropertyInfo(Variant::INT, "space_override", PROPERTY_HINT_ENUM, "Disabled,Combine,Combine-Replace,Replace,Replace-Combine"), "set_space_override_mode", "get_space_override_mode");
-	ADD_PROPERTYNZ(PropertyInfo(Variant::BOOL, "gravity_point"), "set_gravity_is_point", "is_gravity_a_point");
-	ADD_PROPERTYNZ(PropertyInfo(Variant::REAL, "gravity_distance_scale", PROPERTY_HINT_RANGE, "0,1024,0.001"), "set_gravity_distance_scale", "get_gravity_distance_scale");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "space_override", PROPERTY_HINT_ENUM, "Disabled,Combine,Combine-Replace,Replace,Replace-Combine"), "set_space_override_mode", "get_space_override_mode");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "gravity_point"), "set_gravity_is_point", "is_gravity_a_point");
+	ADD_PROPERTY(PropertyInfo(Variant::REAL, "gravity_distance_scale", PROPERTY_HINT_EXP_RANGE, "0,1024,0.001,or_greater"), "set_gravity_distance_scale", "get_gravity_distance_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "gravity_vec"), "set_gravity_vector", "get_gravity_vector");
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "gravity", PROPERTY_HINT_RANGE, "-1024,1024,0.001"), "set_gravity", "get_gravity");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "linear_damp", PROPERTY_HINT_RANGE, "0,100,0.01"), "set_linear_damp", "get_linear_damp");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "angular_damp", PROPERTY_HINT_RANGE, "0,100,0.01"), "set_angular_damp", "get_angular_damp");
-	ADD_PROPERTYNZ(PropertyInfo(Variant::INT, "priority", PROPERTY_HINT_RANGE, "0,128,1"), "set_priority", "get_priority");
-	ADD_PROPERTYNO(PropertyInfo(Variant::BOOL, "monitoring"), "set_monitoring", "is_monitoring");
-	ADD_PROPERTYNO(PropertyInfo(Variant::BOOL, "monitorable"), "set_monitorable", "is_monitorable");
+	ADD_PROPERTY(PropertyInfo(Variant::REAL, "linear_damp", PROPERTY_HINT_RANGE, "0,100,0.01,or_greater"), "set_linear_damp", "get_linear_damp");
+	ADD_PROPERTY(PropertyInfo(Variant::REAL, "angular_damp", PROPERTY_HINT_RANGE, "0,100,0.01,or_greater"), "set_angular_damp", "get_angular_damp");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "priority", PROPERTY_HINT_RANGE, "0,128,1"), "set_priority", "get_priority");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "monitoring"), "set_monitoring", "is_monitoring");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "monitorable"), "set_monitorable", "is_monitorable");
 	ADD_GROUP("Collision", "collision_");
-	ADD_PROPERTYNO(PropertyInfo(Variant::INT, "collision_layer", PROPERTY_HINT_LAYERS_2D_PHYSICS), "set_collision_layer", "get_collision_layer");
-	ADD_PROPERTYNO(PropertyInfo(Variant::INT, "collision_mask", PROPERTY_HINT_LAYERS_2D_PHYSICS), "set_collision_mask", "get_collision_mask");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "collision_layer", PROPERTY_HINT_LAYERS_2D_PHYSICS), "set_collision_layer", "get_collision_layer");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "collision_mask", PROPERTY_HINT_LAYERS_2D_PHYSICS), "set_collision_mask", "get_collision_mask");
 
 	ADD_GROUP("Audio Bus", "audio_bus_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "audio_bus_override"), "set_audio_bus_override", "is_overriding_audio_bus");
-	ADD_PROPERTY(PropertyInfo(Variant::STRING, "audio_bus_name", PROPERTY_HINT_ENUM, ""), "set_audio_bus", "get_audio_bus");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "audio_bus_name", PROPERTY_HINT_ENUM, ""), "set_audio_bus_name", "get_audio_bus_name");
+
+	BIND_ENUM_CONSTANT(SPACE_OVERRIDE_DISABLED);
+	BIND_ENUM_CONSTANT(SPACE_OVERRIDE_COMBINE);
+	BIND_ENUM_CONSTANT(SPACE_OVERRIDE_COMBINE_REPLACE);
+	BIND_ENUM_CONSTANT(SPACE_OVERRIDE_REPLACE);
+	BIND_ENUM_CONSTANT(SPACE_OVERRIDE_REPLACE_COMBINE);
 }
 
-Area2D::Area2D()
-	: CollisionObject2D(Physics2DServer::get_singleton()->area_create(), true) {
+Area2D::Area2D() :
+		CollisionObject2D(Physics2DServer::get_singleton()->area_create(), true) {
 
 	space_override = SPACE_OVERRIDE_DISABLED;
 	set_gravity(98);

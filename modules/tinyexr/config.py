@@ -1,11 +1,5 @@
-
-def can_build(platform):
-    return True
-
+def can_build(env, platform):
+    return env['tools']
 
 def configure(env):
-    # Tools only, disabled for non-tools
-    # TODO: Find a cleaner way to achieve that
-    if (env["tools"] == "no"):
-        env["module_tinyexr_enabled"] = "no"
-        env.disabled_modules.append("tinyexr")
+    pass

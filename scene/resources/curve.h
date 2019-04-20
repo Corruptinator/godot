@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,60 +27,11 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef CURVE_H
 #define CURVE_H
 
-#include "resource.h"
-#if 0
-class Curve2D : public Resource {
-
-	GDCLASS(Curve2D,Resource);
-
-	struct Point {
-
-		Vector2 in;
-		Vector2 out;
-		Vector2 pos;
-	};
-
-
-	Vector<Point> points;
-
-protected:
-
-	static void _bind_methods();
-
-	void set_points_in(const Vector2Array& p_points_in);
-	void set_points_out(const Vector2Array& p_points_out);
-	void set_points_pos(const Vector2Array& p_points_pos);
-
-	Vector2Array get_points_in() const;
-	Vector2Array get_points_out() const;
-	Vector2Array get_points_pos() const;
-
-public:
-
-
-	int get_point_count() const;
-	void add_point(const Vector2& p_pos, const Vector2& p_in=Vector2(), const Vector2& p_out=Vector2());
-	void set_point_pos(int p_index, const Vector2& p_pos);
-	Vector2 get_point_pos(int p_index) const;
-	void set_point_in(int p_index, const Vector2& p_in);
-	Vector2 get_point_in(int p_index) const;
-	void set_point_out(int p_index, const Vector2& p_out);
-	Vector2 get_point_out(int p_index) const;
-	void remove_point(int p_index);
-
-	Vector2 interpolate(int p_index, float p_offset) const;
-	Vector2 interpolatef(real_t p_findex) const;
-	PoolVector<Point2> bake(int p_subdivs=10) const;
-	void advance(real_t p_distance,int &r_index, real_t &r_pos) const;
-	void get_approx_position_from_offset(real_t p_offset,int &r_index, real_t &r_pos,int p_subdivs=16) const;
-
-	Curve2D();
-};
-
-#endif
+#include "core/resource.h"
 
 // y(x) curve
 class Curve : public Resource {
@@ -142,7 +93,7 @@ public:
 
 	void set_point_value(int p_index, real_t pos);
 	int set_point_offset(int p_index, float offset);
-	Vector2 get_point_pos(int p_index) const;
+	Vector2 get_point_position(int p_index) const;
 
 	Point get_point(int p_index) const;
 
@@ -176,6 +127,8 @@ public:
 	int get_bake_resolution() const { return _bake_resolution; }
 	void set_bake_resolution(int p_resolution);
 	real_t interpolate_baked(real_t offset);
+
+	void ensure_default_setup(float p_min, float p_max);
 
 protected:
 	static void _bind_methods();
@@ -230,8 +183,8 @@ protected:
 public:
 	int get_point_count() const;
 	void add_point(const Vector2 &p_pos, const Vector2 &p_in = Vector2(), const Vector2 &p_out = Vector2(), int p_atpos = -1);
-	void set_point_pos(int p_index, const Vector2 &p_pos);
-	Vector2 get_point_pos(int p_index) const;
+	void set_point_position(int p_index, const Vector2 &p_pos);
+	Vector2 get_point_position(int p_index) const;
 	void set_point_in(int p_index, const Vector2 &p_in);
 	Vector2 get_point_in(int p_index) const;
 	void set_point_out(int p_index, const Vector2 &p_out);
@@ -248,6 +201,8 @@ public:
 	float get_baked_length() const;
 	Vector2 interpolate_baked(float p_offset, bool p_cubic = false) const;
 	PoolVector2Array get_baked_points() const; //useful for going through
+	Vector2 get_closest_point(const Vector2 &p_to_point) const;
+	float get_closest_offset(const Vector2 &p_to_point) const;
 
 	PoolVector2Array tessellate(int p_max_stages = 5, float p_tolerance = 4) const; //useful for display
 
@@ -279,11 +234,13 @@ class Curve3D : public Resource {
 	mutable bool baked_cache_dirty;
 	mutable PoolVector3Array baked_point_cache;
 	mutable PoolRealArray baked_tilt_cache;
+	mutable PoolVector3Array baked_up_vector_cache;
 	mutable float baked_max_ofs;
 
 	void _bake() const;
 
 	float bake_interval;
+	bool up_vector_enabled;
 
 	void _bake_segment3d(Map<float, Vector3> &r_bake, float p_begin, float p_end, const Vector3 &p_a, const Vector3 &p_out, const Vector3 &p_b, const Vector3 &p_in, int p_depth, int p_max_depth, float p_tol) const;
 	Dictionary _get_data() const;
@@ -295,8 +252,8 @@ protected:
 public:
 	int get_point_count() const;
 	void add_point(const Vector3 &p_pos, const Vector3 &p_in = Vector3(), const Vector3 &p_out = Vector3(), int p_atpos = -1);
-	void set_point_pos(int p_index, const Vector3 &p_pos);
-	Vector3 get_point_pos(int p_index) const;
+	void set_point_position(int p_index, const Vector3 &p_pos);
+	Vector3 get_point_position(int p_index) const;
 	void set_point_tilt(int p_index, float p_tilt);
 	float get_point_tilt(int p_index) const;
 	void set_point_in(int p_index, const Vector3 &p_in);
@@ -311,12 +268,18 @@ public:
 
 	void set_bake_interval(float p_tolerance);
 	float get_bake_interval() const;
+	void set_up_vector_enabled(bool p_enable);
+	bool is_up_vector_enabled() const;
 
 	float get_baked_length() const;
 	Vector3 interpolate_baked(float p_offset, bool p_cubic = false) const;
 	float interpolate_baked_tilt(float p_offset) const;
+	Vector3 interpolate_baked_up_vector(float p_offset, bool p_apply_tilt = false) const;
 	PoolVector3Array get_baked_points() const; //useful for going through
 	PoolRealArray get_baked_tilts() const; //useful for going through
+	PoolVector3Array get_baked_up_vectors() const;
+	Vector3 get_closest_point(const Vector3 &p_to_point) const;
+	float get_closest_offset(const Vector3 &p_to_point) const;
 
 	PoolVector3Array tessellate(int p_max_stages = 5, float p_tolerance = 4) const; //useful for display
 

@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,15 +27,18 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef STYLE_BOX_H
 #define STYLE_BOX_H
 
-#include "resource.h"
+#include "core/resource.h"
 #include "scene/resources/texture.h"
 #include "servers/visual_server.h"
 /**
 	@author Juan Linietsky <reduzio@gmail.com>
 */
+class CanvasItem;
+
 class StyleBox : public Resource {
 
 	GDCLASS(StyleBox, Resource);
@@ -56,6 +59,8 @@ public:
 	virtual Size2 get_center_size() const;
 
 	virtual void draw(RID p_canvas_item, const Rect2 &p_rect) const = 0;
+
+	CanvasItem *get_current_item_drawn() const;
 
 	Size2 get_minimum_size() const;
 	Point2 get_offset() const;
@@ -101,6 +106,8 @@ protected:
 
 public:
 	void set_expand_margin_size(Margin p_expand_margin, float p_size);
+	void set_expand_margin_size_all(float p_expand_margin_size);
+	void set_expand_margin_size_individual(float p_left, float p_top, float p_right, float p_bottom);
 	float get_expand_margin_size(Margin p_expand_margin) const;
 
 	void set_margin_size(Margin p_margin, float p_size);
@@ -109,14 +116,14 @@ public:
 	void set_region_rect(const Rect2 &p_region_rect);
 	Rect2 get_region_rect() const;
 
-	void set_texture(RES p_texture);
-	RES get_texture() const;
+	void set_texture(Ref<Texture> p_texture);
+	Ref<Texture> get_texture() const;
 
-	void set_normal_map(RES p_normal_map);
-	RES get_normal_map() const;
+	void set_normal_map(Ref<Texture> p_normal_map);
+	Ref<Texture> get_normal_map() const;
 
-	void set_draw_center(bool p_draw);
-	bool get_draw_center() const;
+	void set_draw_center(bool p_enabled);
+	bool is_draw_center_enabled() const;
 	virtual Size2 get_center_size() const;
 
 	void set_h_axis_stretch_mode(AxisStretchMode p_mode);
@@ -142,18 +149,19 @@ class StyleBoxFlat : public StyleBox {
 
 	Color bg_color;
 	Color shadow_color;
-	PoolVector<Color> border_color;
+	Color border_color;
 
 	int border_width[4];
 	int expand_margin[4];
 	int corner_radius[4];
 
-	bool filled;
+	bool draw_center;
 	bool blend_border;
 	bool anti_aliased;
 
 	int corner_detail;
 	int shadow_size;
+	Point2 shadow_offset;
 	int aa_size;
 
 protected:
@@ -166,17 +174,15 @@ public:
 	Color get_bg_color() const;
 
 	//Border Color
-	void set_border_color_all(const Color &p_color);
-	Color get_border_color_all() const;
-	void set_border_color(Margin p_border, const Color &p_color);
-	Color get_border_color(Margin p_border) const;
+	void set_border_color(const Color &p_color);
+	Color get_border_color() const;
 
 	//BORDER
 	//width
 	void set_border_width_all(int p_size);
 	int get_border_width_min() const;
 
-	void set_border_width(Margin p_margin, int p_size);
+	void set_border_width(Margin p_margin, int p_width);
 	int get_border_width(Margin p_margin) const;
 
 	//blend
@@ -196,11 +202,13 @@ public:
 
 	//EXPANDS
 	void set_expand_margin_size(Margin p_expand_margin, float p_size);
+	void set_expand_margin_size_all(float p_expand_margin_size);
+	void set_expand_margin_size_individual(float p_left, float p_top, float p_right, float p_bottom);
 	float get_expand_margin_size(Margin p_expand_margin) const;
 
-	//FILLED
-	void set_filled(bool p_draw);
-	bool is_filled() const;
+	//DRAW CENTER
+	void set_draw_center(bool p_enabled);
+	bool is_draw_center_enabled() const;
 
 	//SHADOW
 	void set_shadow_color(const Color &p_color);
@@ -209,8 +217,11 @@ public:
 	void set_shadow_size(const int &p_size);
 	int get_shadow_size() const;
 
+	void set_shadow_offset(const Point2 &p_offset);
+	Point2 get_shadow_offset() const;
+
 	//ANTI_ALIASING
-	void set_anti_aliased(const bool &p_anit_aliasing);
+	void set_anti_aliased(const bool &p_anti_aliased);
 	bool is_anti_aliased() const;
 	//tempAA
 	void set_aa_size(const int &p_aa_size);
@@ -231,7 +242,8 @@ class StyleBoxLine : public StyleBox {
 	Color color;
 	int thickness;
 	bool vertical;
-	float grow;
+	float grow_begin;
+	float grow_end;
 
 protected:
 	virtual float get_style_margin(Margin p_margin) const;
@@ -247,8 +259,11 @@ public:
 	void set_vertical(bool p_vertical);
 	bool is_vertical() const;
 
-	void set_grow(float p_grow);
-	float get_grow() const;
+	void set_grow_begin(float p_grow);
+	float get_grow_begin() const;
+
+	void set_grow_end(float p_grow);
+	float get_grow_end() const;
 
 	virtual Size2 get_center_size() const;
 

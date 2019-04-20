@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef VARIANT_H
 #define VARIANT_H
 
@@ -34,24 +35,23 @@
 	@author Juan Linietsky <reduzio@gmail.com>
 */
 
-#include "array.h"
-#include "color.h"
-#include "dictionary.h"
-#include "dvector.h"
-#include "face3.h"
-#include "io/ip_address.h"
-#include "math_2d.h"
-#include "matrix3.h"
-#include "node_path.h"
-#include "os/power.h"
-#include "plane.h"
-#include "quat.h"
-#include "rect3.h"
-#include "ref_ptr.h"
-#include "rid.h"
-#include "transform.h"
-#include "ustring.h"
-#include "vector3.h"
+#include "core/array.h"
+#include "core/color.h"
+#include "core/dictionary.h"
+#include "core/io/ip_address.h"
+#include "core/math/aabb.h"
+#include "core/math/basis.h"
+#include "core/math/face3.h"
+#include "core/math/plane.h"
+#include "core/math/quat.h"
+#include "core/math/transform.h"
+#include "core/math/transform_2d.h"
+#include "core/math/vector3.h"
+#include "core/node_path.h"
+#include "core/pool_vector.h"
+#include "core/ref_ptr.h"
+#include "core/rid.h"
+#include "core/ustring.h"
 
 class RefPtr;
 class Object;
@@ -69,8 +69,16 @@ typedef PoolVector<Vector2> PoolVector2Array;
 typedef PoolVector<Vector3> PoolVector3Array;
 typedef PoolVector<Color> PoolColorArray;
 
+// Temporary workaround until c++11 alignas()
+#ifdef __GNUC__
+#define GCC_ALIGNED_8 __attribute__((aligned(8)))
+#else
+#define GCC_ALIGNED_8
+#endif
+
 class Variant {
 public:
+	// If this changes the table in variant_op must be updated
 	enum Type {
 
 		NIL,
@@ -89,7 +97,7 @@ public:
 		TRANSFORM2D,
 		PLANE,
 		QUAT, // 10
-		RECT3,
+		AABB,
 		BASIS,
 		TRANSFORM,
 
@@ -99,15 +107,15 @@ public:
 		_RID,
 		OBJECT,
 		DICTIONARY,
-		ARRAY, // 20
+		ARRAY,
 
 		// arrays
-		POOL_BYTE_ARRAY,
+		POOL_BYTE_ARRAY, // 20
 		POOL_INT_ARRAY,
 		POOL_REAL_ARRAY,
 		POOL_STRING_ARRAY,
-		POOL_VECTOR2_ARRAY, // 25
-		POOL_VECTOR3_ARRAY,
+		POOL_VECTOR2_ARRAY,
+		POOL_VECTOR3_ARRAY, // 25
 		POOL_COLOR_ARRAY,
 
 		VARIANT_MAX
@@ -115,7 +123,7 @@ public:
 	};
 
 private:
-	friend class _VariantCall;
+	friend struct _VariantCall;
 	// Variant takes 20 bytes when real_t is float, and 36 if double
 	// it only allocates extra memory for aabb/matrix.
 
@@ -131,18 +139,16 @@ private:
 	_FORCE_INLINE_ const ObjData &_get_obj() const;
 
 	union {
-
 		bool _bool;
 		int64_t _int;
 		double _real;
 		Transform2D *_transform2d;
-		Rect3 *_rect3;
+		::AABB *_aabb;
 		Basis *_basis;
 		Transform *_transform;
-		RefPtr *_resource;
 		void *_ptr; //generic pointer
 		uint8_t _mem[sizeof(ObjData) > (sizeof(real_t) * 4) ? sizeof(ObjData) : (sizeof(real_t) * 4)];
-	} _data;
+	} _data GCC_ALIGNED_8;
 
 	void reference(const Variant &p_variant);
 	void clear();
@@ -184,7 +190,7 @@ public:
 	operator Rect2() const;
 	operator Vector3() const;
 	operator Plane() const;
-	operator Rect3() const;
+	operator ::AABB() const;
 	operator Quat() const;
 	operator Basis() const;
 	operator Transform() const;
@@ -216,6 +222,7 @@ public:
 	operator Vector<int>() const;
 	operator Vector<real_t>() const;
 	operator Vector<String>() const;
+	operator Vector<StringName>() const;
 	operator Vector<Vector3>() const;
 	operator Vector<Color>() const;
 	operator Vector<RID>() const;
@@ -253,7 +260,7 @@ public:
 	Variant(const Rect2 &p_rect2);
 	Variant(const Vector3 &p_vector3);
 	Variant(const Plane &p_plane);
-	Variant(const Rect3 &p_aabb);
+	Variant(const ::AABB &p_aabb);
 	Variant(const Quat &p_quat);
 	Variant(const Basis &p_transform);
 	Variant(const Transform2D &p_transform);
@@ -280,6 +287,7 @@ public:
 	Variant(const Vector<int> &p_int_array);
 	Variant(const Vector<real_t> &p_real_array);
 	Variant(const Vector<String> &p_string_array);
+	Variant(const Vector<StringName> &p_string_array);
 	Variant(const Vector<Vector3> &p_vector3_array);
 	Variant(const Vector<Color> &p_color_array);
 	Variant(const Vector<Plane> &p_array); // helper
@@ -289,9 +297,10 @@ public:
 
 	Variant(const IP_Address &p_address);
 
+	// If this changes the table in variant_op must be updated
 	enum Operator {
 
-		//comparation
+		//comparison
 		OP_EQUAL,
 		OP_NOT_EQUAL,
 		OP_LESS,
@@ -300,7 +309,7 @@ public:
 		OP_GREATER_EQUAL,
 		//mathematic
 		OP_ADD,
-		OP_SUBSTRACT,
+		OP_SUBTRACT,
 		OP_MULTIPLY,
 		OP_DIVIDE,
 		OP_NEGATE,
@@ -336,6 +345,7 @@ public:
 	}
 
 	void zero();
+	Variant duplicate(bool deep = false) const;
 	static void blend(const Variant &a, const Variant &b, float c, Variant &r_dst);
 	static void interpolate(const Variant &a, const Variant &b, float c, Variant &r_dst);
 
@@ -367,6 +377,7 @@ public:
 	static Vector<Variant> get_method_default_arguments(Variant::Type p_type, const StringName &p_method);
 	static Variant::Type get_method_return_type(Variant::Type p_type, const StringName &p_method, bool *r_has_return = NULL);
 	static Vector<StringName> get_method_argument_names(Variant::Type p_type, const StringName &p_method);
+	static bool is_method_const(Variant::Type p_type, const StringName &p_method);
 
 	void set_named(const StringName &p_index, const Variant &p_value, bool *r_valid = NULL);
 	Variant get_named(const StringName &p_index, bool *r_valid = NULL) const;
@@ -389,13 +400,13 @@ public:
 	uint32_t hash() const;
 
 	bool hash_compare(const Variant &p_variant) const;
-	bool booleanize(bool &valid) const;
+	bool booleanize() const;
 
 	void static_assign(const Variant &p_variant);
 	static void get_constructor_list(Variant::Type p_type, List<MethodInfo> *p_list);
-	static void get_numeric_constants_for_type(Variant::Type p_type, List<StringName> *p_constants);
-	static bool has_numeric_constant(Variant::Type p_type, const StringName &p_value);
-	static int get_numeric_constant_value(Variant::Type p_type, const StringName &p_value, bool *r_valid = NULL);
+	static void get_constants_for_type(Variant::Type p_type, List<StringName> *p_constants);
+	static bool has_constant(Variant::Type p_type, const StringName &p_value);
+	static Variant get_constant_value(Variant::Type p_type, const StringName &p_value, bool *r_valid = NULL);
 
 	typedef String (*ObjectDeConstruct)(const Variant &p_object, void *ud);
 	typedef void (*ObjectConstruct)(const String &p_text, void *ud, Variant &r_value);

@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef POLYGON_2D_H
 #define POLYGON_2D_H
 
@@ -39,6 +40,16 @@ class Polygon2D : public Node2D {
 	PoolVector<Vector2> polygon;
 	PoolVector<Vector2> uv;
 	PoolVector<Color> vertex_colors;
+	Array polygons;
+	int internal_vertices;
+
+	struct Bone {
+		NodePath path;
+		PoolVector<float> weights;
+	};
+
+	Vector<Bone> bone_weights;
+
 	Color color;
 	Ref<Texture> texture;
 	Size2 tex_scale;
@@ -47,24 +58,47 @@ class Polygon2D : public Node2D {
 	float tex_rot;
 	bool invert;
 	float invert_border;
+	bool antialiased;
 
 	Vector2 offset;
 	mutable bool rect_cache_dirty;
 	mutable Rect2 item_rect;
 
-	void _set_texture_rotationd(float p_rot);
-	float _get_texture_rotationd() const;
+	NodePath skeleton;
+	ObjectID current_skeleton_id;
+
+	Array _get_bones() const;
+	void _set_bones(const Array &p_bones);
+
+	void _skeleton_bone_setup_changed();
 
 protected:
 	void _notification(int p_what);
 	static void _bind_methods();
 
 public:
+	virtual Dictionary _edit_get_state() const;
+	virtual void _edit_set_state(const Dictionary &p_state);
+
+	virtual void _edit_set_pivot(const Point2 &p_pivot);
+	virtual Point2 _edit_get_pivot() const;
+	virtual bool _edit_use_pivot() const;
+	virtual Rect2 _edit_get_rect() const;
+	virtual bool _edit_use_rect() const;
+
+	virtual bool _edit_is_selected_on_click(const Point2 &p_point, double p_tolerance) const;
+
 	void set_polygon(const PoolVector<Vector2> &p_polygon);
 	PoolVector<Vector2> get_polygon() const;
 
+	void set_internal_vertex_count(int p_count);
+	int get_internal_vertex_count() const;
+
 	void set_uv(const PoolVector<Vector2> &p_uv);
 	PoolVector<Vector2> get_uv() const;
+
+	void set_polygons(const Array &p_polygons);
+	Array get_polygons() const;
 
 	void set_color(const Color &p_color);
 	Color get_color() const;
@@ -81,11 +115,17 @@ public:
 	void set_texture_rotation(float p_rot);
 	float get_texture_rotation() const;
 
+	void set_texture_rotation_degrees(float p_rot);
+	float get_texture_rotation_degrees() const;
+
 	void set_texture_scale(const Size2 &p_scale);
 	Size2 get_texture_scale() const;
 
 	void set_invert(bool p_invert);
 	bool get_invert() const;
+
+	void set_antialiased(bool p_antialiased);
+	bool get_antialiased() const;
 
 	void set_invert_border(float p_invert_border);
 	float get_invert_border() const;
@@ -93,13 +133,17 @@ public:
 	void set_offset(const Vector2 &p_offset);
 	Vector2 get_offset() const;
 
-	//editor stuff
+	void add_bone(const NodePath &p_path = NodePath(), const PoolVector<float> &p_weights = PoolVector<float>());
+	int get_bone_count() const;
+	NodePath get_bone_path(int p_index) const;
+	PoolVector<float> get_bone_weights(int p_index) const;
+	void erase_bone(int p_idx);
+	void clear_bones();
+	void set_bone_weights(int p_index, const PoolVector<float> &p_weights);
+	void set_bone_path(int p_index, const NodePath &p_path);
 
-	virtual void edit_set_pivot(const Point2 &p_pivot);
-	virtual Point2 edit_get_pivot() const;
-	virtual bool edit_has_pivot() const;
-
-	virtual Rect2 get_item_rect() const;
+	void set_skeleton(const NodePath &p_skeleton);
+	NodePath get_skeleton() const;
 
 	Polygon2D();
 };

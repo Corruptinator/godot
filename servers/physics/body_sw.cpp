@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "body_sw.h"
 #include "area_sw.h"
 #include "space_sw.h"
@@ -45,8 +46,9 @@ void BodySW::_update_transform_dependant() {
 	// update inertia tensor
 	Basis tb = principal_inertia_axes;
 	Basis tbt = tb.transposed();
-	tb.scale(_inv_inertia);
-	_inv_inertia_tensor = tb * tbt;
+	Basis diag;
+	diag.scale(_inv_inertia);
+	_inv_inertia_tensor = tb * diag * tbt;
 }
 
 void BodySW::update_inertias() {
@@ -84,6 +86,10 @@ void BodySW::update_inertias() {
 			inertia_tensor.set_zero();
 
 			for (int i = 0; i < get_shape_count(); i++) {
+
+				if (is_shape_disabled(i)) {
+					continue;
+				}
 
 				const ShapeSW *shape = get_shape(i);
 
@@ -190,7 +196,8 @@ void BodySW::set_param(PhysicsServer::BodyParameter p_param, real_t p_value) {
 
 			angular_damp = p_value;
 		} break;
-		default: {}
+		default: {
+		}
 	}
 }
 
@@ -220,7 +227,8 @@ real_t BodySW::get_param(PhysicsServer::BodyParameter p_param) const {
 			return angular_damp;
 		} break;
 
-		default: {}
+		default: {
+		}
 	}
 
 	return 0;
@@ -421,6 +429,18 @@ void BodySW::_compute_area_gravity_and_dampenings(const AreaSW *p_area) {
 	area_angular_damp += p_area->get_angular_damp();
 }
 
+void BodySW::set_axis_lock(PhysicsServer::BodyAxis p_axis, bool lock) {
+	if (lock) {
+		locked_axis |= p_axis;
+	} else {
+		locked_axis &= ~p_axis;
+	}
+}
+
+bool BodySW::is_axis_locked(PhysicsServer::BodyAxis p_axis) const {
+	return locked_axis & p_axis;
+}
+
 void BodySW::integrate_forces(real_t p_step) {
 
 	if (mode == PhysicsServer::BODY_MODE_STATIC)
@@ -456,7 +476,8 @@ void BodySW::integrate_forces(real_t p_step) {
 					_compute_area_gravity_and_dampenings(aa[i].area);
 					stopped = mode == PhysicsServer::AREA_SPACE_OVERRIDE_REPLACE;
 				} break;
-				default: {}
+				default: {
+				}
 			}
 		}
 	}
@@ -558,6 +579,22 @@ void BodySW::integrate_velocities(real_t p_step) {
 	if (fi_callback)
 		get_space()->body_add_to_state_query_list(&direct_state_query_list);
 
+	//apply axis lock linear
+	for (int i = 0; i < 3; i++) {
+		if (is_axis_locked((PhysicsServer::BodyAxis)(1 << i))) {
+			linear_velocity[i] = 0;
+			biased_linear_velocity[i] = 0;
+			new_transform.origin[i] = get_transform().origin[i];
+		}
+	}
+	//apply axis lock angular
+	for (int i = 0; i < 3; i++) {
+		if (is_axis_locked((PhysicsServer::BodyAxis)(1 << (i + 3)))) {
+			angular_velocity[i] = 0;
+			biased_angular_velocity[i] = 0;
+		}
+	}
+
 	if (mode == PhysicsServer::BODY_MODE_KINEMATIC) {
 
 		_set_transform(new_transform, false);
@@ -566,22 +603,6 @@ void BodySW::integrate_velocities(real_t p_step) {
 			set_active(false); //stopped moving, deactivate
 
 		return;
-	}
-
-	//apply axis lock
-	if (axis_lock != PhysicsServer::BODY_AXIS_LOCK_DISABLED) {
-
-		int axis = axis_lock - 1;
-		for (int i = 0; i < 3; i++) {
-			if (i == axis) {
-				linear_velocity[i] = 0;
-				biased_linear_velocity[i] = 0;
-			} else {
-
-				angular_velocity[i] = 0;
-				biased_angular_velocity[i] = 0;
-			}
-		}
 	}
 
 	Vector3 total_angular_velocity = angular_velocity + biased_angular_velocity;
@@ -634,7 +655,7 @@ void BodySW::simulate_motion(const Transform& p_xform,real_t p_step) {
 	linear_velocity=(p_xform.origin - get_transform().origin)/p_step;
 
 	//compute a FAKE angular velocity, not so easy
-	Matrix3 rot=get_transform().basis.orthonormalized().transposed() * p_xform.basis.orthonormalized();
+	Basis rot=get_transform().basis.orthonormalized().transposed() * p_xform.basis.orthonormalized();
 	Vector3 axis;
 	real_t angle;
 
@@ -735,13 +756,22 @@ void BodySW::set_force_integration_callback(ObjectID p_id, const StringName &p_m
 	}
 }
 
-BodySW::BodySW()
-	: CollisionObjectSW(TYPE_BODY), active_list(this), inertia_update_list(this), direct_state_query_list(this) {
+void BodySW::set_kinematic_margin(real_t p_margin) {
+	kinematic_safe_margin = p_margin;
+}
+
+BodySW::BodySW() :
+		CollisionObjectSW(TYPE_BODY),
+		locked_axis(0),
+		active_list(this),
+		inertia_update_list(this),
+		direct_state_query_list(this) {
 
 	mode = PhysicsServer::BODY_MODE_RIGID;
 	active = true;
 
 	mass = 1;
+	kinematic_safe_margin = 0.01;
 	//_inv_inertia=Transform();
 	_inv_mass = 1;
 	bounce = 0;
@@ -766,7 +796,6 @@ BodySW::BodySW()
 	continuous_cd = false;
 	can_sleep = false;
 	fi_callback = NULL;
-	axis_lock = PhysicsServer::BODY_AXIS_LOCK_DISABLED;
 }
 
 BodySW::~BodySW() {

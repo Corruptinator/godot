@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,13 +27,14 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef REFERENCE_H
 #define REFERENCE_H
 
-#include "class_db.h"
-#include "object.h"
-#include "ref_ptr.h"
-#include "safe_refcount.h"
+#include "core/class_db.h"
+#include "core/object.h"
+#include "core/ref_ptr.h"
+#include "core/safe_refcount.h"
 
 /**
 	@author Juan Linietsky <reduzio@gmail.com>
@@ -51,28 +52,13 @@ protected:
 public:
 	_FORCE_INLINE_ bool is_referenced() const { return refcount_init.get() < 1; }
 	bool init_ref();
-	void reference();
+	bool reference(); // returns false if refcount is at zero and didn't get increased
 	bool unreference();
 	int reference_get_count() const;
 
 	Reference();
 	~Reference();
 };
-
-#if 0
-class RefBase {
-protected:
-	void ref_inc(Reference *p_reference);
-	bool ref_dec(Reference *p_reference);
-	Reference *first_ref(Reference *p_reference);
-	Reference * get_reference_from_ref(const RefBase &p_base);
-	virtual Reference * get_reference() const=0;
-	char * get_refptr_data(const RefPtr &p_refptr) const;
-public:
-
-	virtual ~RefBase() {}
-};
-#endif
 
 template <class T>
 class Ref {
@@ -101,6 +87,13 @@ class Ref {
 
 	//virtual Reference * get_reference() const { return reference; }
 public:
+	_FORCE_INLINE_ bool operator==(const T *p_ptr) const {
+		return reference == p_ptr;
+	}
+	_FORCE_INLINE_ bool operator!=(const T *p_ptr) const {
+		return reference != p_ptr;
+	}
+
 	_FORCE_INLINE_ bool operator<(const Ref<T> &p_r) const {
 
 		return reference < p_r.reference;
@@ -151,20 +144,10 @@ public:
 		return refptr;
 	};
 
-#if 0
-	// go to RefPtr
-	operator RefPtr() const {
-
-		return get_ref_ptr();
-	}
-#endif
-
-#if 1
 	operator Variant() const {
 
 		return Variant(get_ref_ptr());
 	}
-#endif
 
 	void operator=(const Ref &p_from) {
 
@@ -180,7 +163,7 @@ public:
 			return;
 		}
 		Ref r;
-		r.reference = refb->cast_to<T>();
+		r.reference = Object::cast_to<T>(refb);
 		ref(r);
 		r.reference = NULL;
 	}
@@ -194,7 +177,7 @@ public:
 			return;
 		}
 		Ref r;
-		r.reference = refb->cast_to<T>();
+		r.reference = Object::cast_to<T>(refb);
 		ref(r);
 		r.reference = NULL;
 	}
@@ -209,9 +192,22 @@ public:
 			return;
 		}
 		Ref r;
-		r.reference = refb->cast_to<T>();
+		r.reference = Object::cast_to<T>(refb);
 		ref(r);
 		r.reference = NULL;
+	}
+
+	template <class T_Other>
+	void reference_ptr(T_Other *p_ptr) {
+		if (reference == p_ptr) {
+			return;
+		}
+		unref();
+
+		T *r = Object::cast_to<T>(p_ptr);
+		if (r) {
+			ref_pointer(r);
+		}
 	}
 
 	Ref(const Ref &p_from) {
@@ -230,17 +226,16 @@ public:
 			return;
 		}
 		Ref r;
-		r.reference = refb->cast_to<T>();
+		r.reference = Object::cast_to<T>(refb);
 		ref(r);
 		r.reference = NULL;
 	}
 
 	Ref(T *p_reference) {
 
+		reference = NULL;
 		if (p_reference)
 			ref_pointer(p_reference);
-		else
-			reference = NULL;
 	}
 
 	Ref(const Variant &p_variant) {
@@ -254,7 +249,7 @@ public:
 			return;
 		}
 		Ref r;
-		r.reference = refb->cast_to<T>();
+		r.reference = Object::cast_to<T>(refb);
 		ref(r);
 		r.reference = NULL;
 	}
@@ -269,7 +264,7 @@ public:
 			return;
 		}
 		Ref r;
-		r.reference = refb->cast_to<T>();
+		r.reference = Object::cast_to<T>(refb);
 		ref(r);
 		r.reference = NULL;
 	}
@@ -374,12 +369,16 @@ struct PtrToArg<const RefPtr &> {
 	}
 };
 
+#endif // PTRCALL_ENABLED
+
+#ifdef DEBUG_METHODS_ENABLED
+
 template <class T>
 struct GetTypeInfo<Ref<T> > {
 	enum { VARIANT_TYPE = Variant::OBJECT };
 
-	static inline StringName get_class_name() {
-		return T::get_class_static();
+	static inline PropertyInfo get_class_info() {
+		return PropertyInfo(Variant::OBJECT, String(), PROPERTY_HINT_RESOURCE_TYPE, T::get_class_static());
 	}
 };
 
@@ -387,10 +386,11 @@ template <class T>
 struct GetTypeInfo<const Ref<T> &> {
 	enum { VARIANT_TYPE = Variant::OBJECT };
 
-	static inline StringName get_class_name() {
-		return T::get_class_static();
+	static inline PropertyInfo get_class_info() {
+		return PropertyInfo(Variant::OBJECT, String(), PROPERTY_HINT_RESOURCE_TYPE, T::get_class_static());
 	}
 };
 
-#endif
+#endif // DEBUG_METHODS_ENABLED
+
 #endif // REFERENCE_H

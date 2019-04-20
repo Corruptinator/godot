@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef PHYSICS_SERVER_SW
 #define PHYSICS_SERVER_SW
 
@@ -50,6 +51,8 @@ class PhysicsServerSW : public PhysicsServer {
 	int active_objects;
 	int collision_pairs;
 
+	bool flushing_queries;
+
 	StepSW *stepper;
 	Set<const SpaceSW *> active_spaces;
 
@@ -62,6 +65,10 @@ class PhysicsServerSW : public PhysicsServer {
 	mutable RID_Owner<JointSW> joint_owner;
 
 	//void _clear_query(QuerySW *p_query);
+	friend class CollisionObjectSW;
+	SelfList<CollisionObjectSW>::List pending_shape_update_list;
+	void _update_shapes();
+
 public:
 	static PhysicsServerSW *singleton;
 
@@ -80,6 +87,10 @@ public:
 
 	virtual ShapeType shape_get_type(RID p_shape) const;
 	virtual Variant shape_get_data(RID p_shape) const;
+
+	virtual void shape_set_margin(RID p_shape, real_t p_margin);
+	virtual real_t shape_get_margin(RID p_shape) const;
+
 	virtual real_t shape_get_custom_solver_bias(RID p_shape) const;
 
 	/* SPACE API */
@@ -91,7 +102,7 @@ public:
 	virtual void space_set_param(RID p_space, SpaceParameter p_param, real_t p_value);
 	virtual real_t space_get_param(RID p_space, SpaceParameter p_param) const;
 
-	// this function only works on fixed process, errors and returns null otherwise
+	// this function only works on physics process, errors and returns null otherwise
 	virtual PhysicsDirectSpaceState *space_get_direct_state(RID p_space);
 
 	virtual void space_set_debug_contacts(RID p_space, int p_max_contacts);
@@ -183,6 +194,9 @@ public:
 	virtual void body_set_param(RID p_body, BodyParameter p_param, real_t p_value);
 	virtual real_t body_get_param(RID p_body, BodyParameter p_param) const;
 
+	virtual void body_set_kinematic_safe_margin(RID p_body, real_t p_margin);
+	virtual real_t body_get_kinematic_safe_margin(RID p_body) const;
+
 	virtual void body_set_state(RID p_body, BodyState p_state, const Variant &p_variant);
 	virtual Variant body_get_state(RID p_body, BodyState p_state) const;
 
@@ -192,12 +206,17 @@ public:
 	virtual void body_set_applied_torque(RID p_body, const Vector3 &p_torque);
 	virtual Vector3 body_get_applied_torque(RID p_body) const;
 
+	virtual void body_add_central_force(RID p_body, const Vector3 &p_force);
+	virtual void body_add_force(RID p_body, const Vector3 &p_force, const Vector3 &p_pos);
+	virtual void body_add_torque(RID p_body, const Vector3 &p_torque);
+
+	virtual void body_apply_central_impulse(RID p_body, const Vector3 &p_impulse);
 	virtual void body_apply_impulse(RID p_body, const Vector3 &p_pos, const Vector3 &p_impulse);
 	virtual void body_apply_torque_impulse(RID p_body, const Vector3 &p_impulse);
 	virtual void body_set_axis_velocity(RID p_body, const Vector3 &p_axis_velocity);
 
-	virtual void body_set_axis_lock(RID p_body, BodyAxisLock p_lock);
-	virtual BodyAxisLock body_get_axis_lock(RID p_body) const;
+	virtual void body_set_axis_lock(RID p_body, BodyAxis p_axis, bool p_lock);
+	virtual bool body_is_axis_locked(RID p_body, BodyAxis p_axis) const;
 
 	virtual void body_add_collision_exception(RID p_body, RID p_body_b);
 	virtual void body_remove_collision_exception(RID p_body, RID p_body_b);
@@ -217,7 +236,77 @@ public:
 	virtual void body_set_ray_pickable(RID p_body, bool p_enable);
 	virtual bool body_is_ray_pickable(RID p_body) const;
 
-	virtual bool body_test_motion(RID p_body, const Transform &p_from, const Vector3 &p_motion, float p_margin = 0.001, MotionResult *r_result = NULL);
+	virtual bool body_test_motion(RID p_body, const Transform &p_from, const Vector3 &p_motion, bool p_infinite_inertia, MotionResult *r_result = NULL, bool p_exclude_raycast_shapes = true);
+	virtual int body_test_ray_separation(RID p_body, const Transform &p_transform, bool p_infinite_inertia, Vector3 &r_recover_motion, SeparationResult *r_results, int p_result_max, float p_margin = 0.001);
+
+	// this function only works on physics process, errors and returns null otherwise
+	virtual PhysicsDirectBodyState *body_get_direct_state(RID p_body);
+
+	/* SOFT BODY */
+
+	virtual RID soft_body_create(bool p_init_sleeping = false) { return RID(); }
+
+	virtual void soft_body_update_visual_server(RID p_body, class SoftBodyVisualServerHandler *p_visual_server_handler) {}
+
+	virtual void soft_body_set_space(RID p_body, RID p_space) {}
+	virtual RID soft_body_get_space(RID p_body) const { return RID(); }
+
+	virtual void soft_body_set_collision_layer(RID p_body, uint32_t p_layer) {}
+	virtual uint32_t soft_body_get_collision_layer(RID p_body) const { return 0; }
+
+	virtual void soft_body_set_collision_mask(RID p_body, uint32_t p_mask) {}
+	virtual uint32_t soft_body_get_collision_mask(RID p_body) const { return 0; }
+
+	virtual void soft_body_add_collision_exception(RID p_body, RID p_body_b) {}
+	virtual void soft_body_remove_collision_exception(RID p_body, RID p_body_b) {}
+	virtual void soft_body_get_collision_exceptions(RID p_body, List<RID> *p_exceptions) {}
+
+	virtual void soft_body_set_state(RID p_body, BodyState p_state, const Variant &p_variant) {}
+	virtual Variant soft_body_get_state(RID p_body, BodyState p_state) const { return Variant(); }
+
+	virtual void soft_body_set_transform(RID p_body, const Transform &p_transform) {}
+	virtual Vector3 soft_body_get_vertex_position(RID p_body, int vertex_index) const { return Vector3(); }
+
+	virtual void soft_body_set_ray_pickable(RID p_body, bool p_enable) {}
+	virtual bool soft_body_is_ray_pickable(RID p_body) const { return false; }
+
+	virtual void soft_body_set_simulation_precision(RID p_body, int p_simulation_precision) {}
+	virtual int soft_body_get_simulation_precision(RID p_body) { return 0; }
+
+	virtual void soft_body_set_total_mass(RID p_body, real_t p_total_mass) {}
+	virtual real_t soft_body_get_total_mass(RID p_body) { return 0.; }
+
+	virtual void soft_body_set_linear_stiffness(RID p_body, real_t p_stiffness) {}
+	virtual real_t soft_body_get_linear_stiffness(RID p_body) { return 0.; }
+
+	virtual void soft_body_set_areaAngular_stiffness(RID p_body, real_t p_stiffness) {}
+	virtual real_t soft_body_get_areaAngular_stiffness(RID p_body) { return 0.; }
+
+	virtual void soft_body_set_volume_stiffness(RID p_body, real_t p_stiffness) {}
+	virtual real_t soft_body_get_volume_stiffness(RID p_body) { return 0.; }
+
+	virtual void soft_body_set_pressure_coefficient(RID p_body, real_t p_pressure_coefficient) {}
+	virtual real_t soft_body_get_pressure_coefficient(RID p_body) { return 0.; }
+
+	virtual void soft_body_set_pose_matching_coefficient(RID p_body, real_t p_pose_matching_coefficient) {}
+	virtual real_t soft_body_get_pose_matching_coefficient(RID p_body) { return 0.; }
+
+	virtual void soft_body_set_damping_coefficient(RID p_body, real_t p_damping_coefficient) {}
+	virtual real_t soft_body_get_damping_coefficient(RID p_body) { return 0.; }
+
+	virtual void soft_body_set_drag_coefficient(RID p_body, real_t p_drag_coefficient) {}
+	virtual real_t soft_body_get_drag_coefficient(RID p_body) { return 0.; }
+
+	virtual void soft_body_set_mesh(RID p_body, const REF &p_mesh) {}
+
+	virtual void soft_body_move_point(RID p_body, int p_point_index, const Vector3 &p_global_position) {}
+	virtual Vector3 soft_body_get_point_global_position(RID p_body, int p_point_index) { return Vector3(); }
+
+	virtual Vector3 soft_body_get_point_offset(RID p_body, int p_point_index) const { return Vector3(); }
+
+	virtual void soft_body_remove_all_pinned_points(RID p_body) {}
+	virtual void soft_body_pin_point(RID p_body, int p_point_index, bool p_pin) {}
+	virtual bool soft_body_is_point_pinned(RID p_body, int p_point_index) { return 0; }
 
 	/* JOINT API */
 
@@ -259,23 +348,17 @@ public:
 	virtual void generic_6dof_joint_set_flag(RID p_joint, Vector3::Axis, G6DOFJointAxisFlag p_flag, bool p_enable);
 	virtual bool generic_6dof_joint_get_flag(RID p_joint, Vector3::Axis, G6DOFJointAxisFlag p_flag);
 
+	virtual void generic_6dof_joint_set_precision(RID p_joint, int precision) {}
+	virtual int generic_6dof_joint_get_precision(RID p_joint) { return 0; }
+
 	virtual JointType joint_get_type(RID p_joint) const;
 
 	virtual void joint_set_solver_priority(RID p_joint, int p_priority);
 	virtual int joint_get_solver_priority(RID p_joint) const;
 
-#if 0
-	virtual void joint_set_param(RID p_joint, JointParam p_param, real_t p_value);
-	virtual real_t joint_get_param(RID p_joint,JointParam p_param) const;
+	virtual void joint_disable_collisions_between_bodies(RID p_joint, const bool p_disable);
+	virtual bool joint_is_disabled_collisions_between_bodies(RID p_joint) const;
 
-	virtual RID pin_joint_create(const Vector3& p_pos,RID p_body_a,RID p_body_b=RID());
-	virtual RID groove_joint_create(const Vector3& p_a_groove1,const Vector3& p_a_groove2, const Vector3& p_b_anchor, RID p_body_a,RID p_body_b);
-	virtual RID damped_spring_joint_create(const Vector3& p_anchor_a,const Vector3& p_anchor_b,RID p_body_a,RID p_body_b=RID());
-	virtual void damped_string_joint_set_param(RID p_joint, DampedStringParam p_param, real_t p_value);
-	virtual real_t damped_string_joint_get_param(RID p_joint, DampedStringParam p_param) const;
-
-	virtual JointType joint_get_type(RID p_joint) const;
-#endif
 	/* MISC */
 
 	virtual void free(RID p_rid);
@@ -286,6 +369,8 @@ public:
 	virtual void sync();
 	virtual void flush_queries();
 	virtual void finish();
+
+	virtual bool is_flushing_queries() const { return flushing_queries; }
 
 	int get_process_info(ProcessInfo p_info);
 

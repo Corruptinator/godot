@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #import "gl_view.h"
 
 #include "core/os/keyboard.h"
@@ -46,13 +47,13 @@
 @end
 */
 
+bool gles3_available = true;
 int gl_view_base_fb;
 static String keyboard_text;
 static GLView *_instance = NULL;
 
 static bool video_found_error = false;
 static bool video_playing = false;
-static float video_previous_volume = 0.0f;
 static CMTime video_current_time;
 
 void _show_keyboard(String);
@@ -63,6 +64,7 @@ void _pause_video();
 void _focus_out_video();
 void _unpause_video();
 void _stop_video();
+CGFloat _points_to_pixels(CGFloat);
 
 void _show_keyboard(String p_existing) {
 	keyboard_text = p_existing;
@@ -75,6 +77,17 @@ void _hide_keyboard() {
 	[_instance hide_keyboard];
 	keyboard_text = "";
 };
+
+Rect2 _get_ios_window_safe_area(float p_window_width, float p_window_height) {
+	UIEdgeInsets insets = UIEdgeInsetsMake(0, 0, 0, 0);
+	if (_instance != nil && [_instance respondsToSelector:@selector(safeAreaInsets)]) {
+		insets = [_instance safeAreaInsets];
+	}
+	ERR_FAIL_COND_V(insets.left < 0 || insets.top < 0 || insets.right < 0 || insets.bottom < 0,
+			Rect2(0, 0, p_window_width, p_window_height));
+	UIEdgeInsets window_insets = UIEdgeInsetsMake(_points_to_pixels(insets.top), _points_to_pixels(insets.left), _points_to_pixels(insets.bottom), _points_to_pixels(insets.right));
+	return Rect2(window_insets.left, window_insets.top, p_window_width - window_insets.right - window_insets.left, p_window_height - window_insets.bottom - window_insets.top);
+}
 
 bool _play_video(String p_path, float p_volume, String p_audio_track, String p_subtitle_track) {
 	p_path = ProjectSettings::get_singleton()->globalize_path(p_path);
@@ -174,6 +187,19 @@ void _stop_video() {
 	video_playing = false;
 }
 
+CGFloat _points_to_pixels(CGFloat points) {
+	float pixelPerInch;
+	if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) {
+		pixelPerInch = 132;
+	} else if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPhone) {
+		pixelPerInch = 163;
+	} else {
+		pixelPerInch = 160;
+	}
+	CGFloat pointsPerInch = 72.0;
+	return (points / pointsPerInch * pixelPerInch);
+}
+
 @implementation GLView
 
 @synthesize animationInterval;
@@ -223,16 +249,6 @@ static int remove_touch(UITouch *p_touch) {
 	return remaining;
 };
 
-static int get_first_id(UITouch *p_touch) {
-
-	for (int i = 0; i < max_touches; i++) {
-
-		if (touches[i] != NULL)
-			return i;
-	};
-	return -1;
-};
-
 static void clear_touches() {
 
 	for (int i = 0; i < max_touches; i++) {
@@ -268,12 +284,34 @@ static void clear_touches() {
 			kEAGLColorFormatRGBA8,
 			kEAGLDrawablePropertyColorFormat,
 			nil];
+	bool fallback_gl2 = false;
+	// Create a GL ES 3 context based on the gl driver from project settings
+	if (GLOBAL_GET("rendering/quality/driver/driver_name") == "GLES3") {
+		context = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3];
+		NSLog(@"Setting up an OpenGL ES 3.0 context. Based on Project Settings \"rendering/quality/driver/driver_name\"");
+		if (!context && GLOBAL_GET("rendering/quality/driver/fallback_to_gles2")) {
+			gles3_available = false;
+			fallback_gl2 = true;
+			NSLog(@"Failed to create OpenGL ES 3.0 context. Falling back to OpenGL ES 2.0");
+		}
+	}
 
-	// Create our EAGLContext, and if successful make it current and create our framebuffer.
-	context = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3];
+	// Create GL ES 2 context
+	if (GLOBAL_GET("rendering/quality/driver/driver_name") == "GLES2" || fallback_gl2) {
+		context = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES2];
+		NSLog(@"Setting up an OpenGL ES 2.0 context.");
+		if (!context) {
+			NSLog(@"Failed to create OpenGL ES 2.0 context!");
+			return nil;
+		}
+	}
 
-	if (!context || ![EAGLContext setCurrentContext:context] || ![self createFramebuffer]) {
-		[self release];
+	if (![EAGLContext setCurrentContext:context]) {
+		NSLog(@"Failed to set EAGLContext!");
+		return nil;
+	}
+	if (![self createFramebuffer]) {
+		NSLog(@"Failed to create frame buffer!");
 		return nil;
 	}
 
@@ -311,9 +349,7 @@ static void clear_touches() {
 	// Generate IDs for a framebuffer object and a color renderbuffer
 	UIScreen *mainscr = [UIScreen mainScreen];
 	printf("******** screen size %i, %i\n", (int)mainscr.currentMode.size.width, (int)mainscr.currentMode.size.height);
-	float minPointSize = MIN(mainscr.bounds.size.width, mainscr.bounds.size.height);
-	float minScreenSize = MIN(mainscr.currentMode.size.width, mainscr.currentMode.size.height);
-	self.contentScaleFactor = minScreenSize / minPointSize;
+	self.contentScaleFactor = mainscr.nativeScale;
 
 	glGenFramebuffersOES(1, &viewFramebuffer);
 	glGenRenderbuffersOES(1, &viewRenderbuffer);
@@ -474,7 +510,7 @@ static void clear_touches() {
 			int tid = get_touch_id(touch);
 			ERR_FAIL_COND(tid == -1);
 			CGPoint touchPoint = [touch locationInView:self];
-			OSIPhone::get_singleton()->mouse_button(tid, touchPoint.x * self.contentScaleFactor, touchPoint.y * self.contentScaleFactor, true, touch.tapCount > 1, tid == 0);
+			OSIPhone::get_singleton()->touch_press(tid, touchPoint.x * self.contentScaleFactor, touchPoint.y * self.contentScaleFactor, true, touch.tapCount > 1);
 		};
 	};
 }
@@ -491,10 +527,9 @@ static void clear_touches() {
 				continue;
 			int tid = get_touch_id(touch);
 			ERR_FAIL_COND(tid == -1);
-			int first = get_first_id(touch);
 			CGPoint touchPoint = [touch locationInView:self];
 			CGPoint prev_point = [touch previousLocationInView:self];
-			OSIPhone::get_singleton()->mouse_move(tid, prev_point.x * self.contentScaleFactor, prev_point.y * self.contentScaleFactor, touchPoint.x * self.contentScaleFactor, touchPoint.y * self.contentScaleFactor, first == tid);
+			OSIPhone::get_singleton()->touch_drag(tid, prev_point.x * self.contentScaleFactor, prev_point.y * self.contentScaleFactor, touchPoint.x * self.contentScaleFactor, touchPoint.y * self.contentScaleFactor);
 		};
 	};
 }
@@ -510,9 +545,9 @@ static void clear_touches() {
 				continue;
 			int tid = get_touch_id(touch);
 			ERR_FAIL_COND(tid == -1);
-			int rem = remove_touch(touch);
+			remove_touch(touch);
 			CGPoint touchPoint = [touch locationInView:self];
-			OSIPhone::get_singleton()->mouse_button(tid, touchPoint.x * self.contentScaleFactor, touchPoint.y * self.contentScaleFactor, false, false, rem == 0);
+			OSIPhone::get_singleton()->touch_press(tid, touchPoint.x * self.contentScaleFactor, touchPoint.y * self.contentScaleFactor, false, false);
 		};
 	};
 }
@@ -537,6 +572,20 @@ static void clear_touches() {
 	[self resignFirstResponder];
 };
 
+- (void)keyboardOnScreen:(NSNotification *)notification {
+	NSDictionary *info = notification.userInfo;
+	NSValue *value = info[UIKeyboardFrameEndUserInfoKey];
+
+	CGRect rawFrame = [value CGRectValue];
+	CGRect keyboardFrame = [self convertRect:rawFrame fromView:nil];
+
+	OSIPhone::get_singleton()->set_virtual_keyboard_height(_points_to_pixels(keyboardFrame.size.height));
+}
+
+- (void)keyboardHidden:(NSNotification *)notification {
+	OSIPhone::get_singleton()->set_virtual_keyboard_height(0);
+}
+
 - (void)deleteBackward {
 	if (keyboard_text.length())
 		keyboard_text.erase(keyboard_text.length() - 1, 1);
@@ -552,7 +601,7 @@ static void clear_touches() {
 	character.parse_utf8([p_text UTF8String]);
 	keyboard_text = keyboard_text + character;
 	OSIPhone::get_singleton()->key(character[0] == 10 ? KEY_ENTER : character[0], true);
-	printf("inserting text with character %i\n", character[0]);
+	printf("inserting text with character %lc\n", (CharType)character[0]);
 };
 
 - (void)audioRouteChangeListenerCallback:(NSNotification *)notification {
@@ -598,12 +647,25 @@ static void clear_touches() {
 	}
 	init_touches();
 	self.multipleTouchEnabled = YES;
+	self.autocorrectionType = UITextAutocorrectionTypeNo;
 
 	printf("******** adding observer for sound routing changes\n");
 	[[NSNotificationCenter defaultCenter]
 			addObserver:self
 			   selector:@selector(audioRouteChangeListenerCallback:)
 				   name:AVAudioSessionRouteChangeNotification
+				 object:nil];
+
+	printf("******** adding observer for keyboard show/hide\n");
+	[[NSNotificationCenter defaultCenter]
+			addObserver:self
+			   selector:@selector(keyboardOnScreen:)
+				   name:UIKeyboardDidShowNotification
+				 object:nil];
+	[[NSNotificationCenter defaultCenter]
+			addObserver:self
+			   selector:@selector(keyboardHidden:)
+				   name:UIKeyboardDidHideNotification
 				 object:nil];
 
 	//self.autoresizesSubviews = YES;
@@ -702,7 +764,6 @@ static void clear_touches() {
 		[_instance.moviePlayerController stop];
 		[_instance.moviePlayerController.view removeFromSuperview];
 
-	//[[MPMusicPlayerController applicationMusicPlayer] setVolume: video_previous_volume];
 	video_playing = false;
 }
 */

@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,29 +27,17 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "class_db.h"
 
-#include "os/mutex.h"
-#include "version.h"
-
-#ifdef NO_THREADS
-
-#define OBJTYPE_RLOCK
-#define OBJTYPE_WLOCK
-
-#else
+#include "core/engine.h"
+#include "core/os/mutex.h"
+#include "core/version.h"
 
 #define OBJTYPE_RLOCK RWLockRead _rw_lockr_(lock);
 #define OBJTYPE_WLOCK RWLockWrite _rw_lockw_(lock);
 
-#endif
-
 #ifdef DEBUG_METHODS_ENABLED
-
-ParamDef::ParamDef(const Variant &p_variant)
-	: used(true),
-	  val(p_variant) {
-}
 
 MethodDefinition D_METHOD(const char *p_name) {
 
@@ -71,8 +59,8 @@ MethodDefinition D_METHOD(const char *p_name, const char *p_arg1, const char *p_
 	MethodDefinition md;
 	md.name = StaticCString::create(p_name);
 	md.args.resize(2);
-	md.args[0] = StaticCString::create(p_arg1);
-	md.args[1] = StaticCString::create(p_arg2);
+	md.args.write[0] = StaticCString::create(p_arg1);
+	md.args.write[1] = StaticCString::create(p_arg2);
 	return md;
 }
 
@@ -81,9 +69,9 @@ MethodDefinition D_METHOD(const char *p_name, const char *p_arg1, const char *p_
 	MethodDefinition md;
 	md.name = StaticCString::create(p_name);
 	md.args.resize(3);
-	md.args[0] = StaticCString::create(p_arg1);
-	md.args[1] = StaticCString::create(p_arg2);
-	md.args[2] = StaticCString::create(p_arg3);
+	md.args.write[0] = StaticCString::create(p_arg1);
+	md.args.write[1] = StaticCString::create(p_arg2);
+	md.args.write[2] = StaticCString::create(p_arg3);
 	return md;
 }
 
@@ -92,10 +80,10 @@ MethodDefinition D_METHOD(const char *p_name, const char *p_arg1, const char *p_
 	MethodDefinition md;
 	md.name = StaticCString::create(p_name);
 	md.args.resize(4);
-	md.args[0] = StaticCString::create(p_arg1);
-	md.args[1] = StaticCString::create(p_arg2);
-	md.args[2] = StaticCString::create(p_arg3);
-	md.args[3] = StaticCString::create(p_arg4);
+	md.args.write[0] = StaticCString::create(p_arg1);
+	md.args.write[1] = StaticCString::create(p_arg2);
+	md.args.write[2] = StaticCString::create(p_arg3);
+	md.args.write[3] = StaticCString::create(p_arg4);
 	return md;
 }
 
@@ -104,11 +92,11 @@ MethodDefinition D_METHOD(const char *p_name, const char *p_arg1, const char *p_
 	MethodDefinition md;
 	md.name = StaticCString::create(p_name);
 	md.args.resize(5);
-	md.args[0] = StaticCString::create(p_arg1);
-	md.args[1] = StaticCString::create(p_arg2);
-	md.args[2] = StaticCString::create(p_arg3);
-	md.args[3] = StaticCString::create(p_arg4);
-	md.args[4] = StaticCString::create(p_arg5);
+	md.args.write[0] = StaticCString::create(p_arg1);
+	md.args.write[1] = StaticCString::create(p_arg2);
+	md.args.write[2] = StaticCString::create(p_arg3);
+	md.args.write[3] = StaticCString::create(p_arg4);
+	md.args.write[4] = StaticCString::create(p_arg5);
 	return md;
 }
 
@@ -117,12 +105,12 @@ MethodDefinition D_METHOD(const char *p_name, const char *p_arg1, const char *p_
 	MethodDefinition md;
 	md.name = StaticCString::create(p_name);
 	md.args.resize(6);
-	md.args[0] = StaticCString::create(p_arg1);
-	md.args[1] = StaticCString::create(p_arg2);
-	md.args[2] = StaticCString::create(p_arg3);
-	md.args[3] = StaticCString::create(p_arg4);
-	md.args[4] = StaticCString::create(p_arg5);
-	md.args[5] = StaticCString::create(p_arg6);
+	md.args.write[0] = StaticCString::create(p_arg1);
+	md.args.write[1] = StaticCString::create(p_arg2);
+	md.args.write[2] = StaticCString::create(p_arg3);
+	md.args.write[3] = StaticCString::create(p_arg4);
+	md.args.write[4] = StaticCString::create(p_arg5);
+	md.args.write[5] = StaticCString::create(p_arg6);
 	return md;
 }
 
@@ -131,13 +119,13 @@ MethodDefinition D_METHOD(const char *p_name, const char *p_arg1, const char *p_
 	MethodDefinition md;
 	md.name = StaticCString::create(p_name);
 	md.args.resize(7);
-	md.args[0] = StaticCString::create(p_arg1);
-	md.args[1] = StaticCString::create(p_arg2);
-	md.args[2] = StaticCString::create(p_arg3);
-	md.args[3] = StaticCString::create(p_arg4);
-	md.args[4] = StaticCString::create(p_arg5);
-	md.args[5] = StaticCString::create(p_arg6);
-	md.args[6] = StaticCString::create(p_arg7);
+	md.args.write[0] = StaticCString::create(p_arg1);
+	md.args.write[1] = StaticCString::create(p_arg2);
+	md.args.write[2] = StaticCString::create(p_arg3);
+	md.args.write[3] = StaticCString::create(p_arg4);
+	md.args.write[4] = StaticCString::create(p_arg5);
+	md.args.write[5] = StaticCString::create(p_arg6);
+	md.args.write[6] = StaticCString::create(p_arg7);
 	return md;
 }
 
@@ -146,14 +134,14 @@ MethodDefinition D_METHOD(const char *p_name, const char *p_arg1, const char *p_
 	MethodDefinition md;
 	md.name = StaticCString::create(p_name);
 	md.args.resize(8);
-	md.args[0] = StaticCString::create(p_arg1);
-	md.args[1] = StaticCString::create(p_arg2);
-	md.args[2] = StaticCString::create(p_arg3);
-	md.args[3] = StaticCString::create(p_arg4);
-	md.args[4] = StaticCString::create(p_arg5);
-	md.args[5] = StaticCString::create(p_arg6);
-	md.args[6] = StaticCString::create(p_arg7);
-	md.args[7] = StaticCString::create(p_arg8);
+	md.args.write[0] = StaticCString::create(p_arg1);
+	md.args.write[1] = StaticCString::create(p_arg2);
+	md.args.write[2] = StaticCString::create(p_arg3);
+	md.args.write[3] = StaticCString::create(p_arg4);
+	md.args.write[4] = StaticCString::create(p_arg5);
+	md.args.write[5] = StaticCString::create(p_arg6);
+	md.args.write[6] = StaticCString::create(p_arg7);
+	md.args.write[7] = StaticCString::create(p_arg8);
 	return md;
 }
 
@@ -162,15 +150,15 @@ MethodDefinition D_METHOD(const char *p_name, const char *p_arg1, const char *p_
 	MethodDefinition md;
 	md.name = StaticCString::create(p_name);
 	md.args.resize(9);
-	md.args[0] = StaticCString::create(p_arg1);
-	md.args[1] = StaticCString::create(p_arg2);
-	md.args[2] = StaticCString::create(p_arg3);
-	md.args[3] = StaticCString::create(p_arg4);
-	md.args[4] = StaticCString::create(p_arg5);
-	md.args[5] = StaticCString::create(p_arg6);
-	md.args[6] = StaticCString::create(p_arg7);
-	md.args[7] = StaticCString::create(p_arg8);
-	md.args[8] = StaticCString::create(p_arg9);
+	md.args.write[0] = StaticCString::create(p_arg1);
+	md.args.write[1] = StaticCString::create(p_arg2);
+	md.args.write[2] = StaticCString::create(p_arg3);
+	md.args.write[3] = StaticCString::create(p_arg4);
+	md.args.write[4] = StaticCString::create(p_arg5);
+	md.args.write[5] = StaticCString::create(p_arg6);
+	md.args.write[6] = StaticCString::create(p_arg7);
+	md.args.write[7] = StaticCString::create(p_arg8);
+	md.args.write[8] = StaticCString::create(p_arg9);
 	return md;
 }
 
@@ -179,16 +167,76 @@ MethodDefinition D_METHOD(const char *p_name, const char *p_arg1, const char *p_
 	MethodDefinition md;
 	md.name = StaticCString::create(p_name);
 	md.args.resize(10);
-	md.args[0] = StaticCString::create(p_arg1);
-	md.args[1] = StaticCString::create(p_arg2);
-	md.args[2] = StaticCString::create(p_arg3);
-	md.args[3] = StaticCString::create(p_arg4);
-	md.args[4] = StaticCString::create(p_arg5);
-	md.args[5] = StaticCString::create(p_arg6);
-	md.args[6] = StaticCString::create(p_arg7);
-	md.args[7] = StaticCString::create(p_arg8);
-	md.args[8] = StaticCString::create(p_arg9);
-	md.args[9] = StaticCString::create(p_arg10);
+	md.args.write[0] = StaticCString::create(p_arg1);
+	md.args.write[1] = StaticCString::create(p_arg2);
+	md.args.write[2] = StaticCString::create(p_arg3);
+	md.args.write[3] = StaticCString::create(p_arg4);
+	md.args.write[4] = StaticCString::create(p_arg5);
+	md.args.write[5] = StaticCString::create(p_arg6);
+	md.args.write[6] = StaticCString::create(p_arg7);
+	md.args.write[7] = StaticCString::create(p_arg8);
+	md.args.write[8] = StaticCString::create(p_arg9);
+	md.args.write[9] = StaticCString::create(p_arg10);
+	return md;
+}
+
+MethodDefinition D_METHOD(const char *p_name, const char *p_arg1, const char *p_arg2, const char *p_arg3, const char *p_arg4, const char *p_arg5, const char *p_arg6, const char *p_arg7, const char *p_arg8, const char *p_arg9, const char *p_arg10, const char *p_arg11) {
+
+	MethodDefinition md;
+	md.name = StaticCString::create(p_name);
+	md.args.resize(11);
+	md.args.write[0] = StaticCString::create(p_arg1);
+	md.args.write[1] = StaticCString::create(p_arg2);
+	md.args.write[2] = StaticCString::create(p_arg3);
+	md.args.write[3] = StaticCString::create(p_arg4);
+	md.args.write[4] = StaticCString::create(p_arg5);
+	md.args.write[5] = StaticCString::create(p_arg6);
+	md.args.write[6] = StaticCString::create(p_arg7);
+	md.args.write[7] = StaticCString::create(p_arg8);
+	md.args.write[8] = StaticCString::create(p_arg9);
+	md.args.write[9] = StaticCString::create(p_arg10);
+	md.args.write[10] = StaticCString::create(p_arg11);
+	return md;
+}
+
+MethodDefinition D_METHOD(const char *p_name, const char *p_arg1, const char *p_arg2, const char *p_arg3, const char *p_arg4, const char *p_arg5, const char *p_arg6, const char *p_arg7, const char *p_arg8, const char *p_arg9, const char *p_arg10, const char *p_arg11, const char *p_arg12) {
+
+	MethodDefinition md;
+	md.name = StaticCString::create(p_name);
+	md.args.resize(12);
+	md.args.write[0] = StaticCString::create(p_arg1);
+	md.args.write[1] = StaticCString::create(p_arg2);
+	md.args.write[2] = StaticCString::create(p_arg3);
+	md.args.write[3] = StaticCString::create(p_arg4);
+	md.args.write[4] = StaticCString::create(p_arg5);
+	md.args.write[5] = StaticCString::create(p_arg6);
+	md.args.write[6] = StaticCString::create(p_arg7);
+	md.args.write[7] = StaticCString::create(p_arg8);
+	md.args.write[8] = StaticCString::create(p_arg9);
+	md.args.write[9] = StaticCString::create(p_arg10);
+	md.args.write[10] = StaticCString::create(p_arg11);
+	md.args.write[11] = StaticCString::create(p_arg12);
+	return md;
+}
+
+MethodDefinition D_METHOD(const char *p_name, const char *p_arg1, const char *p_arg2, const char *p_arg3, const char *p_arg4, const char *p_arg5, const char *p_arg6, const char *p_arg7, const char *p_arg8, const char *p_arg9, const char *p_arg10, const char *p_arg11, const char *p_arg12, const char *p_arg13) {
+
+	MethodDefinition md;
+	md.name = StaticCString::create(p_name);
+	md.args.resize(13);
+	md.args.write[0] = StaticCString::create(p_arg1);
+	md.args.write[1] = StaticCString::create(p_arg2);
+	md.args.write[2] = StaticCString::create(p_arg3);
+	md.args.write[3] = StaticCString::create(p_arg4);
+	md.args.write[4] = StaticCString::create(p_arg5);
+	md.args.write[5] = StaticCString::create(p_arg6);
+	md.args.write[6] = StaticCString::create(p_arg7);
+	md.args.write[7] = StaticCString::create(p_arg8);
+	md.args.write[8] = StaticCString::create(p_arg9);
+	md.args.write[9] = StaticCString::create(p_arg10);
+	md.args.write[10] = StaticCString::create(p_arg11);
+	md.args.write[11] = StaticCString::create(p_arg12);
+	md.args.write[12] = StaticCString::create(p_arg13);
 	return md;
 }
 
@@ -201,16 +249,24 @@ void ClassDB::set_current_api(APIType p_api) {
 	current_api = p_api;
 }
 
-HashMap<StringName, ClassDB::ClassInfo, StringNameHasher> ClassDB::classes;
-HashMap<StringName, StringName, StringNameHasher> ClassDB::resource_base_extensions;
-HashMap<StringName, StringName, StringNameHasher> ClassDB::compat_classes;
+ClassDB::APIType ClassDB::get_current_api() {
+
+	return current_api;
+}
+
+HashMap<StringName, ClassDB::ClassInfo> ClassDB::classes;
+HashMap<StringName, StringName> ClassDB::resource_base_extensions;
+HashMap<StringName, StringName> ClassDB::compat_classes;
 
 ClassDB::ClassInfo::ClassInfo() {
 
+	api = API_NONE;
 	creation_func = NULL;
 	inherits_ptr = NULL;
 	disabled = false;
+	exposed = false;
 }
+
 ClassDB::ClassInfo::~ClassInfo() {
 }
 
@@ -256,6 +312,19 @@ void ClassDB::get_inheriters_from_class(const StringName &p_class, List<StringNa
 	}
 }
 
+void ClassDB::get_direct_inheriters_from_class(const StringName &p_class, List<StringName> *p_classes) {
+
+	OBJTYPE_RLOCK;
+
+	const StringName *k = NULL;
+
+	while ((k = classes.next(k))) {
+
+		if (*k != p_class && get_parent_class(*k) == p_class)
+			p_classes->push_back(*k);
+	}
+}
+
 StringName ClassDB::get_parent_class_nocheck(const StringName &p_class) {
 
 	OBJTYPE_RLOCK;
@@ -290,7 +359,7 @@ uint64_t ClassDB::get_api_hash(APIType p_api) {
 	OBJTYPE_RLOCK;
 #ifdef DEBUG_METHODS_ENABLED
 
-	uint64_t hash = hash_djb2_one_64(HashMapHasherDefault::hash(VERSION_FULL_NAME));
+	uint64_t hash = hash_djb2_one_64(HashMapHasherDefault::hash(VERSION_FULL_CONFIG));
 
 	List<StringName> names;
 
@@ -307,7 +376,7 @@ uint64_t ClassDB::get_api_hash(APIType p_api) {
 
 		ClassInfo *t = classes.getptr(E->get());
 		ERR_FAIL_COND_V(!t, 0);
-		if (t->api != p_api)
+		if (t->api != p_api || !t->exposed)
 			continue;
 		hash = hash_djb2_one_64(t->name.hash(), hash);
 		hash = hash_djb2_one_64(t->inherits.hash(), hash);
@@ -333,10 +402,11 @@ uint64_t ClassDB::get_api_hash(APIType p_api) {
 				hash = hash_djb2_one_64(mb->get_argument_type(-1), hash); //return
 
 				for (int i = 0; i < mb->get_argument_count(); i++) {
-					hash = hash_djb2_one_64(mb->get_argument_info(i).type, hash);
-					hash = hash_djb2_one_64(mb->get_argument_info(i).name.hash(), hash);
-					hash = hash_djb2_one_64(mb->get_argument_info(i).hint, hash);
-					hash = hash_djb2_one_64(mb->get_argument_info(i).hint_string.hash(), hash);
+					const PropertyInfo info = mb->get_argument_info(i);
+					hash = hash_djb2_one_64(info.type, hash);
+					hash = hash_djb2_one_64(info.name.hash(), hash);
+					hash = hash_djb2_one_64(info.hint, hash);
+					hash = hash_djb2_one_64(info.hint_string.hash(), hash);
 				}
 
 				hash = hash_djb2_one_64(mb->get_default_argument_count(), hash);
@@ -461,7 +531,12 @@ Object *ClassDB::instance(const StringName &p_class) {
 		ERR_FAIL_COND_V(ti->disabled, NULL);
 		ERR_FAIL_COND_V(!ti->creation_func, NULL);
 	}
-
+#ifdef TOOLS_ENABLED
+	if (ti->api == API_EDITOR && !Engine::get_singleton()->is_editor_hint()) {
+		ERR_PRINTS("Class '" + String(p_class) + "' can only be instantiated by editor.");
+		return NULL;
+	}
+#endif
 	return ti->creation_func();
 }
 bool ClassDB::can_instance(const StringName &p_class) {
@@ -538,11 +613,14 @@ void ClassDB::get_method_list(StringName p_class, List<MethodInfo> *p_methods, b
 				minfo.arguments.push_back(method->get_argument_info(i));
 			}
 
-			if (method->get_argument_type(-1) != Variant::NIL) {
-				minfo.return_val = method->get_argument_info(-1);
+			minfo.return_val = method->get_return_info();
+			minfo.flags = method->get_hint_flags();
+
+			for (int i = 0; i < method->get_argument_count(); i++) {
+				if (method->has_default_argument(i))
+					minfo.default_arguments.push_back(method->get_default_argument(i));
 			}
 
-			minfo.flags = method->get_hint_flags();
 			p_methods->push_back(minfo);
 		}
 
@@ -583,7 +661,7 @@ MethodBind *ClassDB::get_method(StringName p_class, StringName p_name) {
 	return NULL;
 }
 
-void ClassDB::bind_integer_constant(const StringName &p_class, const StringName &p_name, int p_constant) {
+void ClassDB::bind_integer_constant(const StringName &p_class, const StringName &p_enum, const StringName &p_name, int p_constant) {
 
 	OBJTYPE_WLOCK;
 
@@ -599,6 +677,24 @@ void ClassDB::bind_integer_constant(const StringName &p_class, const StringName 
 	}
 
 	type->constant_map[p_name] = p_constant;
+
+	String enum_name = p_enum;
+	if (enum_name != String()) {
+		if (enum_name.find(".") != -1) {
+			enum_name = enum_name.get_slicec('.', 1);
+		}
+
+		List<StringName> *constants_list = type->enum_map.getptr(enum_name);
+
+		if (constants_list) {
+			constants_list->push_back(p_name);
+		} else {
+			List<StringName> new_list;
+			new_list.push_back(p_name);
+			type->enum_map[enum_name] = new_list;
+		}
+	}
+
 #ifdef DEBUG_METHODS_ENABLED
 	type->constant_order.push_back(p_name);
 #endif
@@ -655,6 +751,75 @@ int ClassDB::get_integer_constant(const StringName &p_class, const StringName &p
 	return 0;
 }
 
+StringName ClassDB::get_integer_constant_enum(const StringName &p_class, const StringName &p_name, bool p_no_inheritance) {
+
+	OBJTYPE_RLOCK;
+
+	ClassInfo *type = classes.getptr(p_class);
+
+	while (type) {
+
+		const StringName *k = NULL;
+		while ((k = type->enum_map.next(k))) {
+
+			List<StringName> &constants_list = type->enum_map.get(*k);
+			const List<StringName>::Element *found = constants_list.find(p_name);
+			if (found)
+				return *k;
+		}
+
+		if (p_no_inheritance)
+			break;
+
+		type = type->inherits_ptr;
+	}
+
+	return StringName();
+}
+
+void ClassDB::get_enum_list(const StringName &p_class, List<StringName> *p_enums, bool p_no_inheritance) {
+
+	OBJTYPE_RLOCK;
+
+	ClassInfo *type = classes.getptr(p_class);
+
+	while (type) {
+
+		const StringName *k = NULL;
+		while ((k = type->enum_map.next(k))) {
+			p_enums->push_back(*k);
+		}
+
+		if (p_no_inheritance)
+			break;
+
+		type = type->inherits_ptr;
+	}
+}
+
+void ClassDB::get_enum_constants(const StringName &p_class, const StringName &p_enum, List<StringName> *p_constants, bool p_no_inheritance) {
+
+	OBJTYPE_RLOCK;
+
+	ClassInfo *type = classes.getptr(p_class);
+
+	while (type) {
+
+		const List<StringName> *constants = type->enum_map.getptr(p_enum);
+
+		if (constants) {
+			for (const List<StringName>::Element *E = constants->front(); E; E = E->next()) {
+				p_constants->push_back(E->get());
+			}
+		}
+
+		if (p_no_inheritance)
+			break;
+
+		type = type->inherits_ptr;
+	}
+}
+
 void ClassDB::add_signal(StringName p_class, const MethodInfo &p_signal) {
 
 	OBJTYPE_WLOCK;
@@ -662,10 +827,10 @@ void ClassDB::add_signal(StringName p_class, const MethodInfo &p_signal) {
 	ClassInfo *type = classes.getptr(p_class);
 	ERR_FAIL_COND(!type);
 
-	ClassInfo *check = type;
 	StringName sname = p_signal.name;
-#ifdef DEBUG_METHODS_ENABLED
 
+#ifdef DEBUG_METHODS_ENABLED
+	ClassInfo *check = type;
 	while (check) {
 		if (check->signal_map.has(sname)) {
 			ERR_EXPLAIN("Type " + String(p_class) + " already has signal: " + String(sname));
@@ -745,15 +910,9 @@ void ClassDB::add_property_group(StringName p_class, const String &p_name, const
 
 void ClassDB::add_property(StringName p_class, const PropertyInfo &p_pinfo, const StringName &p_setter, const StringName &p_getter, int p_index) {
 
-#ifndef NO_THREADS
 	lock->read_lock();
-#endif
-
 	ClassInfo *type = classes.getptr(p_class);
-
-#ifndef NO_THREADS
 	lock->read_unlock();
-#endif
 
 	ERR_FAIL_COND(!type);
 
@@ -777,7 +936,7 @@ void ClassDB::add_property(StringName p_class, const PropertyInfo &p_pinfo, cons
 	MethodBind *mb_get = NULL;
 	if (p_getter) {
 
-		MethodBind *mb_get = get_method(p_class, p_getter);
+		mb_get = get_method(p_class, p_getter);
 #ifdef DEBUG_METHODS_ENABLED
 
 		if (!mb_get) {
@@ -795,9 +954,8 @@ void ClassDB::add_property(StringName p_class, const PropertyInfo &p_pinfo, cons
 	}
 
 #ifdef DEBUG_METHODS_ENABLED
-
 	if (type->property_setget.has(p_pinfo.name)) {
-		ERR_EXPLAIN("Object already has property: " + p_class);
+		ERR_EXPLAIN("Object " + p_class + " already has property: " + p_pinfo.name);
 		ERR_FAIL();
 	}
 #endif
@@ -929,7 +1087,6 @@ bool ClassDB::get_property(Object *p_object, const StringName &p_property, Varia
 			r_value = *c;
 			return true;
 		}
-		//if (check->constant_map.fin)
 
 		check = check->inherits_ptr;
 	}
@@ -1056,24 +1213,6 @@ bool ClassDB::has_method(StringName p_class, StringName p_method, bool p_no_inhe
 	return false;
 }
 
-bool ClassDB::get_setter_and_type_for_property(const StringName &p_class, const StringName &p_prop, StringName &r_class, StringName &r_setter) {
-
-	ClassInfo *type = classes.getptr(p_class);
-	ClassInfo *check = type;
-	while (check) {
-
-		if (check->property_setget.has(p_prop)) {
-			r_class = check->name;
-			r_setter = check->property_setget[p_prop].setter;
-			return true;
-		}
-
-		check = check->inherits_ptr;
-	}
-
-	return false;
-}
-
 #ifdef DEBUG_METHODS_ENABLED
 MethodBind *ClassDB::bind_methodfi(uint32_t p_flags, MethodBind *p_bind, const MethodDefinition &method_name, const Variant **p_defs, int p_defcount) {
 	StringName mdname = method_name.name;
@@ -1130,7 +1269,7 @@ MethodBind *ClassDB::bind_methodfi(uint32_t p_flags, MethodBind *p_bind, const c
 	defvals.resize(p_defcount);
 	for (int i = 0; i < p_defcount; i++) {
 
-		defvals[i] = *p_defs[p_defcount - i - 1];
+		defvals.write[i] = *p_defs[p_defcount - i - 1];
 	}
 
 	p_bind->set_default_arguments(defvals);
@@ -1197,6 +1336,15 @@ bool ClassDB::is_class_enabled(StringName p_class) {
 	return !ti->disabled;
 }
 
+bool ClassDB::is_class_exposed(StringName p_class) {
+
+	OBJTYPE_RLOCK;
+
+	ClassInfo *ti = classes.getptr(p_class);
+	ERR_FAIL_COND_V(!ti, false);
+	return ti->exposed;
+}
+
 StringName ClassDB::get_category(const StringName &p_node) {
 
 	ERR_FAIL_COND_V(!classes.has(p_node), StringName());
@@ -1236,14 +1384,46 @@ void ClassDB::get_extensions_for_type(const StringName &p_class, List<String> *p
 	}
 }
 
+HashMap<StringName, HashMap<StringName, Variant> > ClassDB::default_values;
+
+Variant ClassDB::class_get_default_property_value(const StringName &p_class, const StringName &p_property) {
+
+	if (!default_values.has(p_class)) {
+
+		default_values[p_class] = HashMap<StringName, Variant>();
+
+		if (ClassDB::can_instance(p_class)) {
+
+			Object *c = ClassDB::instance(p_class);
+			List<PropertyInfo> plist;
+			c->get_property_list(&plist);
+			for (List<PropertyInfo>::Element *E = plist.front(); E; E = E->next()) {
+				if (E->get().usage & (PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_EDITOR)) {
+
+					Variant v = c->get(E->get().name);
+					default_values[p_class][E->get().name] = v;
+				}
+			}
+			memdelete(c);
+		}
+	}
+
+	if (!default_values.has(p_class)) {
+		return Variant();
+	}
+
+	if (!default_values[p_class].has(p_property)) {
+		return Variant();
+	}
+
+	return default_values[p_class][p_property];
+}
+
 RWLock *ClassDB::lock = NULL;
 
 void ClassDB::init() {
 
-#ifndef NO_THREADS
-
 	lock = RWLock::create();
-#endif
 }
 
 void ClassDB::cleanup() {
@@ -1265,11 +1445,9 @@ void ClassDB::cleanup() {
 	classes.clear();
 	resource_base_extensions.clear();
 	compat_classes.clear();
-
-#ifndef NO_THREADS
+	default_values.clear();
 
 	memdelete(lock);
-#endif
 }
 
 //

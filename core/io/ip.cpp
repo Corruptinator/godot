@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,12 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "ip.h"
-#include "hash_map.h"
-#include "os/semaphore.h"
-#include "os/thread.h"
+
+#include "core/hash_map.h"
+#include "core/os/semaphore.h"
+#include "core/os/thread.h"
 
 VARIANT_ENUM_CAST(IP::ResolverStatus);
 
@@ -116,7 +118,7 @@ IP_Address IP::resolve_hostname(const String &p_hostname, IP::Type p_type) {
 	resolver->mutex->lock();
 
 	String key = _IP_ResolverPrivate::get_cache_key(p_hostname, p_type);
-	if (resolver->cache.has(key)) {
+	if (resolver->cache.has(key) && resolver->cache[key].is_valid()) {
 		IP_Address res = resolver->cache[key];
 		resolver->mutex->unlock();
 		return res;
@@ -143,7 +145,7 @@ IP::ResolverID IP::resolve_hostname_queue_item(const String &p_hostname, IP::Typ
 	String key = _IP_ResolverPrivate::get_cache_key(p_hostname, p_type);
 	resolver->queue[id].hostname = p_hostname;
 	resolver->queue[id].type = p_type;
-	if (resolver->cache.has(key)) {
+	if (resolver->cache.has(key) && resolver->cache[key].is_valid()) {
 		resolver->queue[id].response = resolver->cache[key];
 		resolver->queue[id].status = IP::RESOLVER_STATUS_DONE;
 	} else {
@@ -242,18 +244,18 @@ void IP::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_local_addresses"), &IP::_get_local_addresses);
 	ClassDB::bind_method(D_METHOD("clear_cache", "hostname"), &IP::clear_cache, DEFVAL(""));
 
-	BIND_CONSTANT(RESOLVER_STATUS_NONE);
-	BIND_CONSTANT(RESOLVER_STATUS_WAITING);
-	BIND_CONSTANT(RESOLVER_STATUS_DONE);
-	BIND_CONSTANT(RESOLVER_STATUS_ERROR);
+	BIND_ENUM_CONSTANT(RESOLVER_STATUS_NONE);
+	BIND_ENUM_CONSTANT(RESOLVER_STATUS_WAITING);
+	BIND_ENUM_CONSTANT(RESOLVER_STATUS_DONE);
+	BIND_ENUM_CONSTANT(RESOLVER_STATUS_ERROR);
 
 	BIND_CONSTANT(RESOLVER_MAX_QUERIES);
 	BIND_CONSTANT(RESOLVER_INVALID_ID);
 
-	BIND_CONSTANT(TYPE_NONE);
-	BIND_CONSTANT(TYPE_IPV4);
-	BIND_CONSTANT(TYPE_IPV6);
-	BIND_CONSTANT(TYPE_ANY);
+	BIND_ENUM_CONSTANT(TYPE_NONE);
+	BIND_ENUM_CONSTANT(TYPE_IPV4);
+	BIND_ENUM_CONSTANT(TYPE_IPV6);
+	BIND_ENUM_CONSTANT(TYPE_ANY);
 }
 
 IP *IP::singleton = NULL;

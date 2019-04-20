@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,12 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef MEMORY_H
 #define MEMORY_H
 
-#include "safe_refcount.h"
+#include "core/safe_refcount.h"
+
 #include <stddef.h>
 
 /**
@@ -72,6 +74,14 @@ void *operator new(size_t p_size, void *(*p_allocfunc)(size_t p_size)); ///< ope
 
 void *operator new(size_t p_size, void *p_pointer, size_t check, const char *p_description); ///< operator new that takes a description and uses a pointer to the preallocated memory
 
+#ifdef _MSC_VER
+// When compiling with VC++ 2017, the above declarations of placement new generate many irrelevant warnings (C4291).
+// The purpose of the following definitions is to muffle these warnings, not to provide a usable implementation of placement delete.
+void operator delete(void *p_mem, const char *p_description);
+void operator delete(void *p_mem, void *(*p_allocfunc)(size_t p_size));
+void operator delete(void *p_mem, void *p_pointer, size_t check, const char *p_description);
+#endif
+
 #define memalloc(m_size) Memory::alloc_static(m_size)
 #define memrealloc(m_mem, m_size) Memory::realloc_static(m_mem, m_size)
 #define memfree(m_size) Memory::free_static(m_size)
@@ -106,7 +116,9 @@ void memdelete(T *p_class) {
 
 	if (!predelete_handler(p_class))
 		return; // doesn't want to be deleted
-	p_class->~T();
+	if (!__has_trivial_destructor(T))
+		p_class->~T();
+
 	Memory::free_static(p_class, false);
 }
 
@@ -115,7 +127,9 @@ void memdelete_allocator(T *p_class) {
 
 	if (!predelete_handler(p_class))
 		return; // doesn't want to be deleted
-	p_class->~T();
+	if (!__has_trivial_destructor(T))
+		p_class->~T();
+
 	A::free(p_class);
 }
 
@@ -140,11 +154,13 @@ T *memnew_arr_template(size_t p_elements, const char *p_descr = "") {
 	ERR_FAIL_COND_V(!mem, failptr);
 	*(mem - 1) = p_elements;
 
-	T *elems = (T *)mem;
+	if (!__has_trivial_constructor(T)) {
+		T *elems = (T *)mem;
 
-	/* call operator new */
-	for (size_t i = 0; i < p_elements; i++) {
-		new (&elems[i], sizeof(T), p_descr) T;
+		/* call operator new */
+		for (size_t i = 0; i < p_elements; i++) {
+			new (&elems[i], sizeof(T), p_descr) T;
+		}
 	}
 
 	return (T *)mem;
@@ -167,12 +183,14 @@ void memdelete_arr(T *p_class) {
 
 	uint64_t *ptr = (uint64_t *)p_class;
 
-	uint64_t elem_count = *(ptr - 1);
+	if (!__has_trivial_destructor(T)) {
+		uint64_t elem_count = *(ptr - 1);
 
-	for (uint64_t i = 0; i < elem_count; i++) {
+		for (uint64_t i = 0; i < elem_count; i++) {
+			p_class[i].~T();
+		}
+	}
 
-		p_class[i].~T();
-	};
 	Memory::free_static(ptr, true);
 }
 

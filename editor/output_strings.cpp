@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "output_strings.h"
 
 void OutputStrings::update_scrollbars() {
@@ -86,6 +87,7 @@ void OutputStrings::_notification(int p_what) {
 			float h_ofs = (int)h_scroll->get_value();
 			Point2 icon_ofs = Point2(0, (font_height - (int)icon_error->get_height()) / 2);
 
+			FontDrawer drawer(font, Color(1, 1, 1));
 			while (E && ofs.y < (size_height - (int)margin.y)) {
 
 				String str = E->get().text;
@@ -103,7 +105,8 @@ void OutputStrings::_notification(int p_what) {
 					case LINE_LINK: {
 
 					} break;
-					default: {}
+					default: {
+					}
 				}
 
 				line_ofs.y += font->get_ascent();

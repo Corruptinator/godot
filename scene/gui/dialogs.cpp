@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,11 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "dialogs.h"
+#include "core/print_string.h"
+#include "core/translation.h"
 #include "line_edit.h"
-#include "print_string.h"
-#include "translation.h"
 
 #ifdef TOOLS_ENABLED
 #include "editor/editor_node.h"
@@ -60,13 +61,13 @@ void WindowDialog::_fix_size() {
 	float right = 0;
 	// Check validity, because the theme could contain a different type of StyleBox
 	if (panel->get_class() == "StyleBoxTexture") {
-		Ref<StyleBoxTexture> panel_texture = panel->cast_to<StyleBoxTexture>();
+		Ref<StyleBoxTexture> panel_texture = Object::cast_to<StyleBoxTexture>(*panel);
 		top = panel_texture->get_expand_margin_size(MARGIN_TOP);
 		left = panel_texture->get_expand_margin_size(MARGIN_LEFT);
 		bottom = panel_texture->get_expand_margin_size(MARGIN_BOTTOM);
 		right = panel_texture->get_expand_margin_size(MARGIN_RIGHT);
 	} else if (panel->get_class() == "StyleBoxFlat") {
-		Ref<StyleBoxFlat> panel_flat = panel->cast_to<StyleBoxFlat>();
+		Ref<StyleBoxFlat> panel_flat = Object::cast_to<StyleBoxFlat>(*panel);
 		top = panel_flat->get_expand_margin_size(MARGIN_TOP);
 		left = panel_flat->get_expand_margin_size(MARGIN_LEFT);
 		bottom = panel_flat->get_expand_margin_size(MARGIN_BOTTOM);
@@ -195,7 +196,7 @@ void WindowDialog::_notification(int p_what) {
 			RID canvas = get_canvas_item();
 
 			// Draw the background.
-			Ref<StyleBox> panel = get_stylebox("panel", "WindowDialog");
+			Ref<StyleBox> panel = get_stylebox("panel");
 			Size2 size = get_size();
 			panel->draw(canvas, Rect2(0, 0, size.x, size.y));
 
@@ -227,11 +228,11 @@ void WindowDialog::_notification(int p_what) {
 		} break;
 #ifdef TOOLS_ENABLED
 		case NOTIFICATION_POST_POPUP: {
-			if (get_tree() && get_tree()->is_editor_hint() && EditorNode::get_singleton())
+			if (get_tree() && Engine::get_singleton()->is_editor_hint() && EditorNode::get_singleton())
 				EditorNode::get_singleton()->dim_editor(true);
 		} break;
 		case NOTIFICATION_POPUP_HIDE: {
-			if (get_tree() && get_tree()->is_editor_hint() && EditorNode::get_singleton())
+			if (get_tree() && Engine::get_singleton()->is_editor_hint() && EditorNode::get_singleton())
 				EditorNode::get_singleton()->dim_editor(false);
 		} break;
 #endif
@@ -271,7 +272,7 @@ int WindowDialog::_drag_hit_test(const Point2 &pos) const {
 
 void WindowDialog::set_title(const String &p_title) {
 
-	title = XL_MESSAGE(p_title);
+	title = tr(p_title);
 	update();
 }
 String WindowDialog::get_title() const {
@@ -289,10 +290,17 @@ bool WindowDialog::get_resizable() const {
 Size2 WindowDialog::get_minimum_size() const {
 
 	Ref<Font> font = get_font("title_font", "WindowDialog");
-	int msx = close_button->get_combined_minimum_size().x;
-	msx += font->get_string_size(title).x;
 
-	return Size2(msx, 1);
+	const int button_width = close_button->get_combined_minimum_size().x;
+	const int title_width = font->get_string_size(title).x;
+	const int padding = button_width / 2;
+	const int button_area = button_width + padding;
+
+	// as the title gets centered, title_width + close_button_width is not enough.
+	// we want a width w, such that w / 2 - title_width / 2 >= button_area, i.e.
+	// w >= 2 * button_area + title_width
+
+	return Size2(2 * button_area + title_width, 1);
 }
 
 TextureButton *WindowDialog::get_close_button() {
@@ -424,7 +432,7 @@ void AcceptDialog::_update_child_rects() {
 	Vector2 csize(size.x - margin * 2, size.y - margin * 3 - hminsize.y - label_size.height);
 
 	for (int i = 0; i < get_child_count(); i++) {
-		Control *c = get_child(i)->cast_to<Control>();
+		Control *c = Object::cast_to<Control>(get_child(i));
 		if (!c)
 			continue;
 
@@ -448,7 +456,7 @@ Size2 AcceptDialog::get_minimum_size() const {
 	Size2 minsize = label->get_combined_minimum_size();
 
 	for (int i = 0; i < get_child_count(); i++) {
-		Control *c = get_child(i)->cast_to<Control>();
+		Control *c = Object::cast_to<Control>(get_child(i));
 		if (!c)
 			continue;
 
@@ -527,7 +535,7 @@ void AcceptDialog::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("custom_action", PropertyInfo(Variant::STRING, "action")));
 
 	ADD_GROUP("Dialog", "dialog");
-	ADD_PROPERTYNZ(PropertyInfo(Variant::STRING, "dialog_text", PROPERTY_HINT_MULTILINE_TEXT, "", PROPERTY_USAGE_DEFAULT_INTL), "set_text", "get_text");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "dialog_text", PROPERTY_HINT_MULTILINE_TEXT, "", PROPERTY_USAGE_DEFAULT_INTL), "set_text", "get_text");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "dialog_hide_on_ok"), "set_hide_on_ok", "get_hide_on_ok");
 }
 

@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,11 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "editor_run.h"
 
+#include "core/project_settings.h"
 #include "editor_settings.h"
-#include "project_settings.h"
 
 EditorRun::Status EditorRun::get_status() const {
 
@@ -45,32 +46,50 @@ Error EditorRun::run(const String &p_scene, const String p_custom_args, const Li
 	int remote_port = (int)EditorSettings::get_singleton()->get("network/debug/remote_port");
 
 	if (resource_path != "") {
-		args.push_back("-path");
+		args.push_back("--path");
 		args.push_back(resource_path.replace(" ", "%20"));
 	}
 
 	if (true) {
-		args.push_back("-rdebug");
+		args.push_back("--remote-debug");
 		args.push_back(remote_host + ":" + String::num(remote_port));
 	}
 
-	args.push_back("-epid");
-	args.push_back(String::num(OS::get_singleton()->get_process_id()));
+	args.push_back("--allow_focus_steal_pid");
+	args.push_back(itos(OS::get_singleton()->get_process_id()));
 
 	if (debug_collisions) {
-		args.push_back("-debugcol");
+		args.push_back("--debug-collisions");
 	}
 
 	if (debug_navigation) {
-		args.push_back("-debugnav");
+		args.push_back("--debug-navigation");
 	}
 
 	int screen = EditorSettings::get_singleton()->get("run/window_placement/screen");
-
 	if (screen == 0) {
+		// Same as editor
 		screen = OS::get_singleton()->get_current_screen();
+	} else if (screen == 1) {
+		// Previous monitor (wrap to the other end if needed)
+		screen = Math::wrapi(
+				OS::get_singleton()->get_current_screen() - 1,
+				0,
+				OS::get_singleton()->get_screen_count());
+	} else if (screen == 2) {
+		// Next monitor (wrap to the other end if needed)
+		screen = Math::wrapi(
+				OS::get_singleton()->get_current_screen() + 1,
+				0,
+				OS::get_singleton()->get_screen_count());
 	} else {
-		screen--;
+		// Fixed monitor ID
+		// There are 3 special options, so decrement the option ID by 3 to get the monitor ID
+		screen -= 3;
+	}
+
+	if (OS::get_singleton()->is_disable_crash_handler()) {
+		args.push_back("--disable-crash-handler");
 	}
 
 	Rect2 screen_rect;
@@ -78,7 +97,6 @@ Error EditorRun::run(const String &p_scene, const String p_custom_args, const Li
 	screen_rect.size = OS::get_singleton()->get_screen_size(screen);
 
 	Size2 desired_size;
-
 	desired_size.x = ProjectSettings::get_singleton()->get("display/window/size/width");
 	desired_size.y = ProjectSettings::get_singleton()->get("display/window/size/height");
 
@@ -93,41 +111,48 @@ Error EditorRun::run(const String &p_scene, const String p_custom_args, const Li
 	int window_placement = EditorSettings::get_singleton()->get("run/window_placement/rect");
 
 	switch (window_placement) {
-		case 0: { // default
+		case 0: { // top left
 
-			args.push_back("-p");
-			args.push_back(itos(screen_rect.position.x) + "x" + itos(screen_rect.position.y));
+			args.push_back("--position");
+			args.push_back(itos(screen_rect.position.x) + "," + itos(screen_rect.position.y));
 		} break;
 		case 1: { // centered
-			Vector2 pos = screen_rect.position + ((screen_rect.size - desired_size) / 2).floor();
-			args.push_back("-p");
-			args.push_back(itos(pos.x) + "x" + itos(pos.y));
+			int display_scale = 1;
+#ifdef OSX_ENABLED
+			if (OS::get_singleton()->get_screen_dpi(screen) >= 192 && OS::get_singleton()->get_screen_size(screen).x > 2000) {
+				display_scale = 2;
+			}
+#endif
+
+			Vector2 pos = screen_rect.position + ((screen_rect.size / display_scale - desired_size) / 2).floor();
+			args.push_back("--position");
+			args.push_back(itos(pos.x) + "," + itos(pos.y));
 		} break;
 		case 2: { // custom pos
 			Vector2 pos = EditorSettings::get_singleton()->get("run/window_placement/rect_custom_position");
 			pos += screen_rect.position;
-			args.push_back("-p");
-			args.push_back(itos(pos.x) + "x" + itos(pos.y));
+			args.push_back("--position");
+			args.push_back(itos(pos.x) + "," + itos(pos.y));
 		} break;
 		case 3: { // force maximized
 			Vector2 pos = screen_rect.position;
-			args.push_back("-p");
-			args.push_back(itos(pos.x) + "x" + itos(pos.y));
-			args.push_back("-mx");
+			args.push_back("--position");
+			args.push_back(itos(pos.x) + "," + itos(pos.y));
+			args.push_back("--maximized");
 
 		} break;
 		case 4: { // force fullscreen
 
 			Vector2 pos = screen_rect.position;
-			args.push_back("-p");
-			args.push_back(itos(pos.x) + "x" + itos(pos.y));
-			args.push_back("-f");
+			args.push_back("--position");
+			args.push_back(itos(pos.x) + "," + itos(pos.y));
+			args.push_back("--fullscreen");
 		} break;
 	}
 
 	if (p_breakpoints.size()) {
 
-		args.push_back("-bp");
+		args.push_back("--breakpoints");
 		String bpoints;
 		for (const List<String>::Element *E = p_breakpoints.front(); E; E = E->next()) {
 
@@ -152,7 +177,7 @@ Error EditorRun::run(const String &p_scene, const String p_custom_args, const Li
 
 	String exec = OS::get_singleton()->get_executable_path();
 
-	printf("running: %ls", exec.c_str());
+	printf("Running: %ls", exec.c_str());
 	for (List<String>::Element *E = args.front(); E; E = E->next()) {
 
 		printf(" %ls", E->get().c_str());

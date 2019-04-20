@@ -5,8 +5,10 @@ Import('env_modules')
 
 env_vorbis = env_modules.Clone()
 
+stub = True
+
 # Thirdparty source files
-if (env['builtin_libvorbis'] != 'no'):
+if env['builtin_libvorbis']:
     thirdparty_dir = "#thirdparty/libvorbis/"
     thirdparty_sources = [
         #"analysis.c",
@@ -38,12 +40,19 @@ if (env['builtin_libvorbis'] != 'no'):
 
     thirdparty_sources = [thirdparty_dir + file for file in thirdparty_sources]
 
-    env_vorbis.add_source_files(env.modules_sources, thirdparty_sources)
     env_vorbis.Append(CPPPATH=[thirdparty_dir])
 
     # also requires libogg
-    if (env['builtin_libogg'] != 'no'):
+    if env['builtin_libogg']:
         env_vorbis.Append(CPPPATH=["#thirdparty/libogg"])
 
-# Godot source files
-env_vorbis.add_source_files(env.modules_sources, "*.cpp")
+    env_thirdparty = env_vorbis.Clone()
+    env_thirdparty.disable_warnings()
+    env_thirdparty.add_source_files(env.modules_sources, thirdparty_sources)
+
+if not stub:
+    # Module files
+    env_vorbis.add_source_files(env.modules_sources, "*.cpp")
+else:
+    # Module files
+    env_vorbis.add_source_files(env.modules_sources, "stub/register_types.cpp")

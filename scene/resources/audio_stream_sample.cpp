@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,21 +27,30 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "audio_stream_sample.h"
+#include "core/io/marshalls.h"
+#include "core/os/file_access.h"
 
 void AudioStreamPlaybackSample::start(float p_from_pos) {
 
-	for (int i = 0; i < 2; i++) {
-		ima_adpcm[i].step_index = 0;
-		ima_adpcm[i].predictor = 0;
-		ima_adpcm[i].loop_step_index = 0;
-		ima_adpcm[i].loop_predictor = 0;
-		ima_adpcm[i].last_nibble = -1;
-		ima_adpcm[i].loop_pos = 0x7FFFFFFF;
-		ima_adpcm[i].window_ofs = 0;
+	if (base->format == AudioStreamSample::FORMAT_IMA_ADPCM) {
+		//no seeking in IMA_ADPCM
+		for (int i = 0; i < 2; i++) {
+			ima_adpcm[i].step_index = 0;
+			ima_adpcm[i].predictor = 0;
+			ima_adpcm[i].loop_step_index = 0;
+			ima_adpcm[i].loop_predictor = 0;
+			ima_adpcm[i].last_nibble = -1;
+			ima_adpcm[i].loop_pos = 0x7FFFFFFF;
+			ima_adpcm[i].window_ofs = 0;
+		}
+
+		offset = 0;
+	} else {
+		seek(p_from_pos);
 	}
 
-	seek_pos(p_from_pos);
 	sign = 1;
 	active = true;
 }
@@ -61,16 +70,16 @@ int AudioStreamPlaybackSample::get_loop_count() const {
 	return 0;
 }
 
-float AudioStreamPlaybackSample::get_pos() const {
+float AudioStreamPlaybackSample::get_playback_position() const {
 
 	return float(offset >> MIX_FRAC_BITS) / base->mix_rate;
 }
-void AudioStreamPlaybackSample::seek_pos(float p_time) {
+void AudioStreamPlaybackSample::seek(float p_time) {
 
 	if (base->format == AudioStreamSample::FORMAT_IMA_ADPCM)
 		return; //no seeking in ima-adpcm
 
-	float max = get_length();
+	float max = base->get_length();
 	if (p_time < 0) {
 		p_time = 0;
 	} else if (p_time >= max) {
@@ -240,6 +249,10 @@ void AudioStreamPlaybackSample::mix(AudioFrame *p_buffer, float p_rate_scale, in
 
 	int32_t todo = p_frames;
 
+	if (base->loop_mode == AudioStreamSample::LOOP_BACKWARD) {
+		sign = -1;
+	}
+
 	float base_rate = AudioServer::get_singleton()->get_mix_rate();
 	float srate = base->mix_rate;
 	srate *= p_rate_scale;
@@ -373,22 +386,14 @@ void AudioStreamPlaybackSample::mix(AudioFrame *p_buffer, float p_rate_scale, in
 
 		dst_buff += target;
 	}
-}
 
-float AudioStreamPlaybackSample::get_length() const {
-
-	int len = base->data_bytes;
-	switch (base->format) {
-		case AudioStreamSample::FORMAT_8_BITS: len /= 1; break;
-		case AudioStreamSample::FORMAT_16_BITS: len /= 2; break;
-		case AudioStreamSample::FORMAT_IMA_ADPCM: len *= 2; break;
+	if (todo) {
+		//bit was missing from mix
+		int todo_ofs = p_frames - todo;
+		for (int i = todo_ofs; i < p_frames; i++) {
+			p_buffer[i] = AudioFrame(0, 0);
+		}
 	}
-
-	if (base->stereo) {
-		len /= 2;
-	}
-
-	return float(len) / base->mix_rate;
 }
 
 AudioStreamPlaybackSample::AudioStreamPlaybackSample() {
@@ -454,6 +459,22 @@ bool AudioStreamSample::is_stereo() const {
 	return stereo;
 }
 
+float AudioStreamSample::get_length() const {
+
+	int len = data_bytes;
+	switch (format) {
+		case AudioStreamSample::FORMAT_8_BITS: len /= 1; break;
+		case AudioStreamSample::FORMAT_16_BITS: len /= 2; break;
+		case AudioStreamSample::FORMAT_IMA_ADPCM: len *= 2; break;
+	}
+
+	if (stereo) {
+		len /= 2;
+	}
+
+	return float(len) / mix_rate;
+}
+
 void AudioStreamSample::set_data(const PoolVector<uint8_t> &p_data) {
 
 	AudioServer::get_singleton()->lock();
@@ -486,11 +507,85 @@ PoolVector<uint8_t> AudioStreamSample::get_data() const {
 		{
 
 			PoolVector<uint8_t>::Write w = pv.write();
-			copymem(w.ptr(), data, data_bytes);
+			uint8_t *dataptr = (uint8_t *)data;
+			copymem(w.ptr(), dataptr + DATA_PAD, data_bytes);
 		}
 	}
 
 	return pv;
+}
+
+Error AudioStreamSample::save_to_wav(const String &p_path) {
+	if (format == AudioStreamSample::FORMAT_IMA_ADPCM) {
+		WARN_PRINTS("Saving IMA_ADPC samples are not supported yet");
+		return ERR_UNAVAILABLE;
+	}
+
+	int sub_chunk_2_size = data_bytes; //Subchunk2Size = Size of data in bytes
+
+	// Format code
+	// 1:PCM format (for 8 or 16 bit)
+	// 3:IEEE float format
+	int format_code = (format == FORMAT_IMA_ADPCM) ? 3 : 1;
+
+	int n_channels = stereo ? 2 : 1;
+
+	long sample_rate = mix_rate;
+
+	int byte_pr_sample = 0;
+	switch (format) {
+		case AudioStreamSample::FORMAT_8_BITS: byte_pr_sample = 1; break;
+		case AudioStreamSample::FORMAT_16_BITS: byte_pr_sample = 2; break;
+		case AudioStreamSample::FORMAT_IMA_ADPCM: byte_pr_sample = 4; break;
+	}
+
+	String file_path = p_path;
+	if (!(file_path.substr(file_path.length() - 4, 4) == ".wav")) {
+		file_path += ".wav";
+	}
+
+	FileAccessRef file = FileAccess::open(file_path, FileAccess::WRITE); //Overrides existing file if present
+
+	ERR_FAIL_COND_V(!file, ERR_FILE_CANT_WRITE);
+
+	// Create WAV Header
+	file->store_string("RIFF"); //ChunkID
+	file->store_32(sub_chunk_2_size + 36); //ChunkSize = 36 + SubChunk2Size (size of entire file minus the 8 bits for this and previous header)
+	file->store_string("WAVE"); //Format
+	file->store_string("fmt "); //Subchunk1ID
+	file->store_32(16); //Subchunk1Size = 16
+	file->store_16(format_code); //AudioFormat
+	file->store_16(n_channels); //Number of Channels
+	file->store_32(sample_rate); //SampleRate
+	file->store_32(sample_rate * n_channels * byte_pr_sample); //ByteRate
+	file->store_16(n_channels * byte_pr_sample); //BlockAlign = NumChannels * BytePrSample
+	file->store_16(byte_pr_sample * 8); //BitsPerSample
+	file->store_string("data"); //Subchunk2ID
+	file->store_32(sub_chunk_2_size); //Subchunk2Size
+
+	// Add data
+	PoolVector<uint8_t>::Read read_data = get_data().read();
+	switch (format) {
+		case AudioStreamSample::FORMAT_8_BITS:
+			for (unsigned int i = 0; i < data_bytes; i++) {
+				uint8_t data_point = (read_data[i] + 128);
+				file->store_8(data_point);
+			}
+			break;
+		case AudioStreamSample::FORMAT_16_BITS:
+			for (unsigned int i = 0; i < data_bytes / 2; i++) {
+				uint16_t data_point = decode_uint16(&read_data[i * 2]);
+				file->store_16(data_point);
+			}
+			break;
+		case AudioStreamSample::FORMAT_IMA_ADPCM:
+			//Unimplemented
+			break;
+	}
+
+	file->close();
+
+	return OK;
 }
 
 Ref<AudioStreamPlayback> AudioStreamSample::instance_playback() {
@@ -507,6 +602,9 @@ String AudioStreamSample::get_stream_name() const {
 }
 
 void AudioStreamSample::_bind_methods() {
+
+	ClassDB::bind_method(D_METHOD("set_data", "data"), &AudioStreamSample::set_data);
+	ClassDB::bind_method(D_METHOD("get_data"), &AudioStreamSample::get_data);
 
 	ClassDB::bind_method(D_METHOD("set_format", "format"), &AudioStreamSample::set_format);
 	ClassDB::bind_method(D_METHOD("get_format"), &AudioStreamSample::get_format);
@@ -526,16 +624,24 @@ void AudioStreamSample::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_stereo", "stereo"), &AudioStreamSample::set_stereo);
 	ClassDB::bind_method(D_METHOD("is_stereo"), &AudioStreamSample::is_stereo);
 
-	ClassDB::bind_method(D_METHOD("set_data", "data"), &AudioStreamSample::set_data);
-	ClassDB::bind_method(D_METHOD("get_data"), &AudioStreamSample::get_data);
+	ClassDB::bind_method(D_METHOD("save_to_wav", "path"), &AudioStreamSample::save_to_wav);
 
+	ADD_PROPERTY(PropertyInfo(Variant::POOL_BYTE_ARRAY, "data", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR), "set_data", "get_data");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "format", PROPERTY_HINT_ENUM, "8-Bit,16-Bit,IMA-ADPCM"), "set_format", "get_format");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "loop_mode", PROPERTY_HINT_ENUM, "Disabled,Forward,Ping-Pong"), "set_loop_mode", "get_loop_mode");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "loop_mode", PROPERTY_HINT_ENUM, "Disabled,Forward,Ping-Pong,Backward"), "set_loop_mode", "get_loop_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "loop_begin"), "set_loop_begin", "get_loop_begin");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "loop_end"), "set_loop_end", "get_loop_end");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "mix_rate"), "set_mix_rate", "get_mix_rate");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "stereo"), "set_stereo", "is_stereo");
-	ADD_PROPERTY(PropertyInfo(Variant::POOL_BYTE_ARRAY, "data", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR), "set_data", "get_data");
+
+	BIND_ENUM_CONSTANT(FORMAT_8_BITS);
+	BIND_ENUM_CONSTANT(FORMAT_16_BITS);
+	BIND_ENUM_CONSTANT(FORMAT_IMA_ADPCM);
+
+	BIND_ENUM_CONSTANT(LOOP_DISABLED);
+	BIND_ENUM_CONSTANT(LOOP_FORWARD);
+	BIND_ENUM_CONSTANT(LOOP_PING_PONG);
+	BIND_ENUM_CONSTANT(LOOP_BACKWARD);
 }
 
 AudioStreamSample::AudioStreamSample() {

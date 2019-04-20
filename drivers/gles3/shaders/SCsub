@@ -2,7 +2,7 @@
 
 Import('env')
 
-if env['BUILDERS'].has_key('GLES3_GLSL'):
+if 'GLES3_GLSL' in env['BUILDERS']:
     env.GLES3_GLSL('copy.glsl');
     env.GLES3_GLSL('resolve.glsl');
     env.GLES3_GLSL('canvas.glsl');
@@ -20,3 +20,4 @@ if env['BUILDERS'].has_key('GLES3_GLSL'):
     env.GLES3_GLSL('exposure.glsl');
     env.GLES3_GLSL('tonemap.glsl');
     env.GLES3_GLSL('particles.glsl');
+    env.GLES3_GLSL('lens_distorted.glsl');

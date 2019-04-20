@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,11 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "label.h"
-#include "print_string.h"
-#include "project_settings.h"
-#include "translation.h"
+#include "core/print_string.h"
+#include "core/project_settings.h"
+#include "core/translation.h"
 
 void Label::set_autowrap(bool p_autowrap) {
 
@@ -63,7 +64,7 @@ void Label::_notification(int p_what) {
 
 	if (p_what == NOTIFICATION_TRANSLATION_CHANGED) {
 
-		String new_text = XL_MESSAGE(text);
+		String new_text = tr(text);
 		if (new_text == xl_text)
 			return; //nothing new
 		xl_text = new_text;
@@ -74,7 +75,7 @@ void Label::_notification(int p_what) {
 
 	if (p_what == NOTIFICATION_DRAW) {
 
-		if (clip || autowrap) {
+		if (clip) {
 			VisualServer::get_singleton()->canvas_item_set_clip(get_canvas_item(), true);
 		}
 
@@ -85,13 +86,16 @@ void Label::_notification(int p_what) {
 
 		Size2 string_size;
 		Size2 size = get_size();
-
+		Ref<StyleBox> style = get_stylebox("normal");
 		Ref<Font> font = get_font("font");
 		Color font_color = get_color("font_color");
 		Color font_color_shadow = get_color("font_color_shadow");
 		bool use_outline = get_constant("shadow_as_outline");
 		Point2 shadow_ofs(get_constant("shadow_offset_x"), get_constant("shadow_offset_y"));
 		int line_spacing = get_constant("line_spacing");
+		Color font_outline_modulate = get_color("font_outline_modulate");
+
+		style->draw(ci, Rect2(Point2(0, 0), get_size()));
 
 		VisualServer::get_singleton()->canvas_item_set_distance_field_mode(get_canvas_item(), font.is_valid() && font->is_distance_field_hint());
 
@@ -99,7 +103,8 @@ void Label::_notification(int p_what) {
 
 		int lines_visible = (size.y + line_spacing) / font_h;
 
-		int space_w = font->get_char_size(' ').width;
+		// ceiling to ensure autowrapping does not cut text
+		int space_w = Math::ceil(font->get_char_size(' ').width);
 		int chars_total = 0;
 
 		int vbegin = 0, vsep = 0;
@@ -147,6 +152,7 @@ void Label::_notification(int p_what) {
 
 		int line = 0;
 		int line_to = lines_skipped + (lines_visible > 0 ? lines_visible : 1);
+		FontDrawer drawer(font, font_outline_modulate);
 		while (wc) {
 			/* handle lines not meant to be drawn quickly */
 			if (line >= line_to)
@@ -193,21 +199,20 @@ void Label::_notification(int p_what) {
 				case ALIGN_FILL:
 				case ALIGN_LEFT: {
 
-					x_ofs = 0;
+					x_ofs = style->get_offset().x;
 				} break;
 				case ALIGN_CENTER: {
 
 					x_ofs = int(size.width - (taken + spaces * space_w)) / 2;
-
 				} break;
 				case ALIGN_RIGHT: {
 
-					x_ofs = int(size.width - (taken + spaces * space_w));
-
+					x_ofs = int(size.width - style->get_margin(MARGIN_RIGHT) - (taken + spaces * space_w));
 				} break;
 			}
 
-			int y_ofs = (line - lines_skipped) * font_h + font->get_ascent();
+			float y_ofs = style->get_offset().y;
+			y_ofs += (line - lines_skipped) * font_h + font->get_ascent();
 			y_ofs += vbegin + line * vsep;
 
 			while (from != to) {
@@ -239,14 +244,14 @@ void Label::_notification(int p_what) {
 							CharType n = xl_text[i + pos + 1];
 							if (uppercase) {
 								c = String::char_uppercase(c);
-								n = String::char_uppercase(c);
+								n = String::char_uppercase(n);
 							}
 
-							float move = font->draw_char(ci, Point2(x_ofs_shadow, y_ofs) + shadow_ofs, c, n, font_color_shadow);
+							float move = font->draw_char(ci, Point2(x_ofs_shadow, y_ofs) + shadow_ofs, c, n, font_color_shadow, false);
 							if (use_outline) {
-								font->draw_char(ci, Point2(x_ofs_shadow, y_ofs) + Vector2(-shadow_ofs.x, shadow_ofs.y), c, n, font_color_shadow);
-								font->draw_char(ci, Point2(x_ofs_shadow, y_ofs) + Vector2(shadow_ofs.x, -shadow_ofs.y), c, n, font_color_shadow);
-								font->draw_char(ci, Point2(x_ofs_shadow, y_ofs) + Vector2(-shadow_ofs.x, -shadow_ofs.y), c, n, font_color_shadow);
+								font->draw_char(ci, Point2(x_ofs_shadow, y_ofs) + Vector2(-shadow_ofs.x, shadow_ofs.y), c, n, font_color_shadow, false);
+								font->draw_char(ci, Point2(x_ofs_shadow, y_ofs) + Vector2(shadow_ofs.x, -shadow_ofs.y), c, n, font_color_shadow, false);
+								font->draw_char(ci, Point2(x_ofs_shadow, y_ofs) + Vector2(-shadow_ofs.x, -shadow_ofs.y), c, n, font_color_shadow, false);
 							}
 							x_ofs_shadow += move;
 							chars_total_shadow++;
@@ -260,10 +265,10 @@ void Label::_notification(int p_what) {
 						CharType n = xl_text[i + pos + 1];
 						if (uppercase) {
 							c = String::char_uppercase(c);
-							n = String::char_uppercase(c);
+							n = String::char_uppercase(n);
 						}
 
-						x_ofs += font->draw_char(ci, Point2(x_ofs, y_ofs), c, n, font_color);
+						x_ofs += drawer.draw_char(ci, Point2(x_ofs, y_ofs), c, n, font_color);
 						chars_total++;
 					}
 				}
@@ -288,18 +293,19 @@ void Label::_notification(int p_what) {
 
 Size2 Label::get_minimum_size() const {
 
+	Size2 min_style = get_stylebox("normal")->get_minimum_size();
+
+	// don't want to mutable everything
+	if (word_cache_dirty)
+		const_cast<Label *>(this)->regenerate_word_cache();
+
 	if (autowrap)
-		return Size2(1, clip ? 1 : minsize.height);
+		return Size2(1, clip ? 1 : minsize.height) + min_style;
 	else {
-
-		// don't want to mutable everything
-		if (word_cache_dirty)
-			const_cast<Label *>(this)->regenerate_word_cache();
-
 		Size2 ms = minsize;
 		if (clip)
 			ms.width = 1;
-		return ms;
+		return ms + min_style;
 	}
 }
 
@@ -325,7 +331,8 @@ int Label::get_longest_line_width() const {
 			}
 		} else {
 
-			int char_width = font->get_char_size(current, xl_text[i + 1]).width;
+			// ceiling to ensure autowrapping does not cut text
+			int char_width = Math::ceil(font->get_char_size(current, xl_text[i + 1]).width);
 			line_width += char_width;
 		}
 	}
@@ -350,7 +357,7 @@ int Label::get_visible_line_count() const {
 
 	int line_spacing = get_constant("line_spacing");
 	int font_h = get_font("font")->get_height() + line_spacing;
-	int lines_visible = (get_size().y + line_spacing) / font_h;
+	int lines_visible = (get_size().height - get_stylebox("normal")->get_minimum_size().height + line_spacing) / font_h;
 
 	if (lines_visible > line_count)
 		lines_visible = line_count;
@@ -370,23 +377,25 @@ void Label::regenerate_word_cache() {
 		memdelete(current);
 	}
 
-	int width = autowrap ? get_size().width : get_longest_line_width();
+	Ref<StyleBox> style = get_stylebox("normal");
+	int width = autowrap ? (get_size().width - style->get_minimum_size().width) : get_longest_line_width();
 	Ref<Font> font = get_font("font");
 
 	int current_word_size = 0;
 	int word_pos = 0;
 	int line_width = 0;
 	int space_count = 0;
-	int space_width = font->get_char_size(' ').width;
+	// ceiling to ensure autowrapping does not cut text
+	int space_width = Math::ceil(font->get_char_size(' ').width);
 	int line_spacing = get_constant("line_spacing");
 	line_count = 1;
 	total_char_cache = 0;
 
 	WordCache *last = NULL;
 
-	for (int i = 0; i < xl_text.size() + 1; i++) {
+	for (int i = 0; i <= xl_text.length(); i++) {
 
-		CharType current = i < xl_text.length() ? xl_text[i] : ' '; //always a space at the end, so the algo works
+		CharType current = i < xl_text.length() ? xl_text[i] : L' '; //always a space at the end, so the algo works
 
 		if (uppercase)
 			current = String::char_uppercase(current);
@@ -397,7 +406,7 @@ void Label::regenerate_word_cache() {
 		bool separatable = (current >= 0x2E08 && current <= 0xFAFF) || (current >= 0xFE30 && current <= 0xFE4F);
 		//current>=33 && (current < 65||current >90) && (current<97||current>122) && (current<48||current>57);
 		bool insert_newline = false;
-		int char_width;
+		int char_width = 0;
 
 		if (current < 33) {
 
@@ -420,12 +429,11 @@ void Label::regenerate_word_cache() {
 
 			if (current == '\n') {
 				insert_newline = true;
-			} else {
+			} else if (current != ' ') {
 				total_char_cache++;
 			}
 
 			if (i < xl_text.length() && xl_text[i] == ' ') {
-				total_char_cache--; // do not count spaces
 				if (line_width > 0 || last == NULL || last->char_pos != WordCache::CHAR_WRAPLINE) {
 					space_count++;
 					line_width += space_width;
@@ -439,8 +447,8 @@ void Label::regenerate_word_cache() {
 			if (current_word_size == 0) {
 				word_pos = i;
 			}
-
-			char_width = font->get_char_size(current, xl_text[i + 1]).width;
+			// ceiling to ensure autowrapping does not cut text
+			char_width = Math::ceil(font->get_char_size(current, xl_text[i + 1]).width);
 			current_word_size += char_width;
 			line_width += char_width;
 			total_char_cache++;
@@ -493,13 +501,16 @@ void Label::regenerate_word_cache() {
 		minsize.height = (font->get_height() * line_count) + (line_spacing * (line_count - 1));
 	}
 
-	minimum_size_changed();
+	if (!autowrap || !clip) {
+		//helps speed up some labels that may change a lot, as no resizing is requested. Do not change.
+		minimum_size_changed();
+	}
 	word_cache_dirty = false;
 }
 
 void Label::set_align(Align p_align) {
 
-	ERR_FAIL_INDEX(p_align, 4);
+	ERR_FAIL_INDEX((int)p_align, 4);
 	align = p_align;
 	update();
 }
@@ -511,7 +522,7 @@ Label::Align Label::get_align() const {
 
 void Label::set_valign(VAlign p_align) {
 
-	ERR_FAIL_INDEX(p_align, 4);
+	ERR_FAIL_INDEX((int)p_align, 4);
 	valign = p_align;
 	update();
 }
@@ -526,7 +537,7 @@ void Label::set_text(const String &p_string) {
 	if (text == p_string)
 		return;
 	text = p_string;
-	xl_text = XL_MESSAGE(p_string);
+	xl_text = tr(p_string);
 	word_cache_dirty = true;
 	if (percent_visible < 1)
 		visible_chars = get_total_character_count() * percent_visible;
@@ -556,6 +567,7 @@ void Label::set_visible_characters(int p_amount) {
 	if (get_total_character_count() > 0) {
 		percent_visible = (float)p_amount / (float)total_char_cache;
 	}
+	_change_notify("percent_visible");
 	update();
 }
 
@@ -576,6 +588,7 @@ void Label::set_percent_visible(float p_percent) {
 		visible_chars = get_total_character_count() * p_percent;
 		percent_visible = p_percent;
 	}
+	_change_notify("visible_chars");
 	update();
 }
 
@@ -641,22 +654,23 @@ void Label::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_max_lines_visible", "lines_visible"), &Label::set_max_lines_visible);
 	ClassDB::bind_method(D_METHOD("get_max_lines_visible"), &Label::get_max_lines_visible);
 
-	BIND_CONSTANT(ALIGN_LEFT);
-	BIND_CONSTANT(ALIGN_CENTER);
-	BIND_CONSTANT(ALIGN_RIGHT);
-	BIND_CONSTANT(ALIGN_FILL);
+	BIND_ENUM_CONSTANT(ALIGN_LEFT);
+	BIND_ENUM_CONSTANT(ALIGN_CENTER);
+	BIND_ENUM_CONSTANT(ALIGN_RIGHT);
+	BIND_ENUM_CONSTANT(ALIGN_FILL);
 
-	BIND_CONSTANT(VALIGN_TOP);
-	BIND_CONSTANT(VALIGN_CENTER);
-	BIND_CONSTANT(VALIGN_BOTTOM);
-	BIND_CONSTANT(VALIGN_FILL);
+	BIND_ENUM_CONSTANT(VALIGN_TOP);
+	BIND_ENUM_CONSTANT(VALIGN_CENTER);
+	BIND_ENUM_CONSTANT(VALIGN_BOTTOM);
+	BIND_ENUM_CONSTANT(VALIGN_FILL);
 
-	ADD_PROPERTYNZ(PropertyInfo(Variant::STRING, "text", PROPERTY_HINT_MULTILINE_TEXT, "", PROPERTY_USAGE_DEFAULT_INTL), "set_text", "get_text");
-	ADD_PROPERTYNZ(PropertyInfo(Variant::INT, "align", PROPERTY_HINT_ENUM, "Left,Center,Right,Fill"), "set_align", "get_align");
-	ADD_PROPERTYNZ(PropertyInfo(Variant::INT, "valign", PROPERTY_HINT_ENUM, "Top,Center,Bottom,Fill"), "set_valign", "get_valign");
-	ADD_PROPERTYNZ(PropertyInfo(Variant::BOOL, "autowrap"), "set_autowrap", "has_autowrap");
-	ADD_PROPERTYNZ(PropertyInfo(Variant::BOOL, "clip_text"), "set_clip_text", "is_clipping_text");
-	ADD_PROPERTYNZ(PropertyInfo(Variant::BOOL, "uppercase"), "set_uppercase", "is_uppercase");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "text", PROPERTY_HINT_MULTILINE_TEXT, "", PROPERTY_USAGE_DEFAULT_INTL), "set_text", "get_text");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "align", PROPERTY_HINT_ENUM, "Left,Center,Right,Fill"), "set_align", "get_align");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "valign", PROPERTY_HINT_ENUM, "Top,Center,Bottom,Fill"), "set_valign", "get_valign");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "autowrap"), "set_autowrap", "has_autowrap");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "clip_text"), "set_clip_text", "is_clipping_text");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "uppercase"), "set_uppercase", "is_uppercase");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "visible_characters", PROPERTY_HINT_RANGE, "-1,128000,1", PROPERTY_USAGE_EDITOR), "set_visible_characters", "get_visible_characters");
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "percent_visible", PROPERTY_HINT_RANGE, "0,1,0.001"), "set_percent_visible", "get_percent_visible");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "lines_skipped", PROPERTY_HINT_RANGE, "0,999,1"), "set_lines_skipped", "get_lines_skipped");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_lines_visible", PROPERTY_HINT_RANGE, "-1,999,1"), "set_max_lines_visible", "get_max_lines_visible");

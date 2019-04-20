@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,38 +27,54 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "light_2d.h"
+
+#include "core/engine.h"
 #include "servers/visual_server.h"
 
-void Light2D::edit_set_pivot(const Point2 &p_pivot) {
-
-	set_texture_offset(p_pivot);
+Dictionary Light2D::_edit_get_state() const {
+	Dictionary state = Node2D::_edit_get_state();
+	state["offset"] = get_texture_offset();
+	return state;
 }
 
-Point2 Light2D::edit_get_pivot() const {
-
-	return get_texture_offset();
+void Light2D::_edit_set_state(const Dictionary &p_state) {
+	Node2D::_edit_set_state(p_state);
+	set_texture_offset(p_state["offset"]);
 }
-bool Light2D::edit_has_pivot() const {
 
+void Light2D::_edit_set_pivot(const Point2 &p_pivot) {
+	set_position(get_transform().xform(p_pivot));
+	set_texture_offset(get_texture_offset() - p_pivot);
+}
+
+Point2 Light2D::_edit_get_pivot() const {
+	return Vector2();
+}
+
+bool Light2D::_edit_use_pivot() const {
 	return true;
 }
 
-Rect2 Light2D::get_item_rect() const {
-
+Rect2 Light2D::_edit_get_rect() const {
 	if (texture.is_null())
-		return Rect2(0, 0, 1, 1);
+		return Rect2();
 
-	Size2i s;
+	Size2 s = texture->get_size() * _scale;
+	return Rect2(texture_offset - s / 2.0, s);
+}
 
-	s = texture->get_size() * _scale;
-	Point2i ofs = texture_offset;
-	ofs -= s / 2;
+bool Light2D::_edit_use_rect() const {
+	return !texture.is_null();
+}
 
-	if (s == Size2(0, 0))
-		s = Size2(1, 1);
+Rect2 Light2D::get_anchorable_rect() const {
+	if (texture.is_null())
+		return Rect2();
 
-	return Rect2(ofs, s);
+	Size2 s = texture->get_size() * _scale;
+	return Rect2(texture_offset - s / 2.0, s);
 }
 
 void Light2D::_update_light_visibility() {
@@ -70,7 +86,7 @@ void Light2D::_update_light_visibility() {
 
 #ifdef TOOLS_ENABLED
 	if (editor_only) {
-		if (!get_tree()->is_editor_hint()) {
+		if (!Engine::get_singleton()->is_editor_hint()) {
 			editor_ok = false;
 		} else {
 			editor_ok = (get_tree()->get_edited_scene_root() && (this == get_tree()->get_edited_scene_root() || get_owner() == get_tree()->get_edited_scene_root()));
@@ -128,6 +144,7 @@ void Light2D::set_texture_offset(const Vector2 &p_offset) {
 	texture_offset = p_offset;
 	VS::get_singleton()->canvas_light_set_texture_offset(canvas_light, texture_offset);
 	item_rect_changed();
+	_change_notify("offset");
 }
 
 Vector2 Light2D::get_texture_offset() const {
@@ -432,15 +449,22 @@ void Light2D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "shadow_enabled"), "set_shadow_enabled", "is_shadow_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "shadow_color"), "set_shadow_color", "get_shadow_color");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "shadow_buffer_size", PROPERTY_HINT_RANGE, "32,16384,1"), "set_shadow_buffer_size", "get_shadow_buffer_size");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "shadow_gradient_length", PROPERTY_HINT_RANGE, "1,4096,0.1"), "set_shadow_gradient_length", "get_shadow_gradient_length");
-	ADD_PROPERTY(PropertyInfo(Variant::REAL, "shadow_filter", PROPERTY_HINT_ENUM, "None,PCF3,PCF5,PCF9,PCF13"), "set_shadow_filter", "get_shadow_filter");
+	ADD_PROPERTY(PropertyInfo(Variant::REAL, "shadow_gradient_length", PROPERTY_HINT_RANGE, "0,4096,0.1"), "set_shadow_gradient_length", "get_shadow_gradient_length");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "shadow_filter", PROPERTY_HINT_ENUM, "None,PCF3,PCF5,PCF7,PCF9,PCF13"), "set_shadow_filter", "get_shadow_filter");
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "shadow_filter_smooth", PROPERTY_HINT_RANGE, "0,64,0.1"), "set_shadow_smooth", "get_shadow_smooth");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "shadow_item_cull_mask", PROPERTY_HINT_LAYERS_2D_RENDER), "set_item_shadow_cull_mask", "get_item_shadow_cull_mask");
 
-	BIND_CONSTANT(MODE_ADD);
-	BIND_CONSTANT(MODE_SUB);
-	BIND_CONSTANT(MODE_MIX);
-	BIND_CONSTANT(MODE_MASK);
+	BIND_ENUM_CONSTANT(MODE_ADD);
+	BIND_ENUM_CONSTANT(MODE_SUB);
+	BIND_ENUM_CONSTANT(MODE_MIX);
+	BIND_ENUM_CONSTANT(MODE_MASK);
+
+	BIND_ENUM_CONSTANT(SHADOW_FILTER_NONE);
+	BIND_ENUM_CONSTANT(SHADOW_FILTER_PCF3);
+	BIND_ENUM_CONSTANT(SHADOW_FILTER_PCF5);
+	BIND_ENUM_CONSTANT(SHADOW_FILTER_PCF7);
+	BIND_ENUM_CONSTANT(SHADOW_FILTER_PCF9);
+	BIND_ENUM_CONSTANT(SHADOW_FILTER_PCF13);
 }
 
 Light2D::Light2D() {

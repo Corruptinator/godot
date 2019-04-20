@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef SPRITE_FRAMES_EDITOR_PLUGIN_H
 #define SPRITE_FRAMES_EDITOR_PLUGIN_H
 
@@ -36,26 +37,29 @@
 #include "scene/gui/dialogs.h"
 #include "scene/gui/file_dialog.h"
 #include "scene/gui/split_container.h"
+#include "scene/gui/texture_rect.h"
 #include "scene/gui/tree.h"
 
-class SpriteFramesEditor : public PanelContainer {
+class SpriteFramesEditor : public HSplitContainer {
 
-	GDCLASS(SpriteFramesEditor, PanelContainer);
+	GDCLASS(SpriteFramesEditor, HSplitContainer);
 
-	Button *load;
-	Button *_delete;
-	Button *paste;
-	Button *empty;
-	Button *empty2;
-	Button *move_up;
-	Button *move_down;
+	ToolButton *load;
+	ToolButton *load_sheet;
+	ToolButton *_delete;
+	ToolButton *copy;
+	ToolButton *paste;
+	ToolButton *empty;
+	ToolButton *empty2;
+	ToolButton *move_up;
+	ToolButton *move_down;
 	ItemList *tree;
 	bool loading_scene;
 	int sel;
 
 	HSplitContainer *split;
-	Button *new_anim;
-	Button *remove_anim;
+	ToolButton *new_anim;
+	ToolButton *remove_anim;
 
 	Tree *animations;
 	SpinBox *anim_speed;
@@ -69,18 +73,25 @@ class SpriteFramesEditor : public PanelContainer {
 
 	StringName edited_anim;
 
+	ConfirmationDialog *split_sheet_dialog;
+	TextureRect *split_sheet_preview;
+	SpinBox *split_sheet_h;
+	SpinBox *split_sheet_v;
+	EditorFileDialog *file_split_sheet;
+	Set<int> frames_selected;
+	int last_frame_selected;
+
 	void _load_pressed();
 	void _load_scene_pressed();
 	void _file_load_request(const PoolVector<String> &p_path, int p_at_pos = -1);
+	void _copy_pressed();
 	void _paste_pressed();
 	void _empty_pressed();
 	void _empty2_pressed();
 	void _delete_pressed();
-	void _delete_confirm_pressed();
 	void _up_pressed();
 	void _down_pressed();
 	void _update_library(bool p_skip_selector = false);
-	void _item_edited();
 
 	void _animation_select();
 	void _animation_name_edited();
@@ -97,6 +108,13 @@ class SpriteFramesEditor : public PanelContainer {
 	Variant get_drag_data_fw(const Point2 &p_point, Control *p_from);
 	bool can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) const;
 	void drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from);
+
+	void _open_sprite_sheet();
+	void _prepare_sprite_sheet(const String &p_file);
+	void _sheet_preview_draw();
+	void _sheet_spin_changed(double);
+	void _sheet_preview_input(const Ref<InputEvent> &p_event);
+	void _sheet_add_frames();
 
 protected:
 	void _notification(int p_what);

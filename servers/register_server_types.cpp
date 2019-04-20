@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,12 +27,13 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "register_server_types.h"
-#include "project_settings.h"
+#include "core/engine.h"
+#include "core/project_settings.h"
 
 #include "arvr/arvr_interface.h"
 #include "arvr/arvr_positional_tracker.h"
-#include "arvr/arvr_script_interface.h"
 #include "arvr_server.h"
 #include "audio/audio_effect.h"
 #include "audio/audio_stream.h"
@@ -47,12 +48,18 @@
 #include "audio/effects/audio_effect_panner.h"
 #include "audio/effects/audio_effect_phaser.h"
 #include "audio/effects/audio_effect_pitch_shift.h"
+#include "audio/effects/audio_effect_record.h"
 #include "audio/effects/audio_effect_reverb.h"
+#include "audio/effects/audio_effect_spectrum_analyzer.h"
 #include "audio/effects/audio_effect_stereo_enhance.h"
+#include "audio/effects/audio_stream_generator.h"
 #include "audio_server.h"
+#include "core/script_debugger_remote.h"
+#include "physics/physics_server_sw.h"
+#include "physics_2d/physics_2d_server_sw.h"
+#include "physics_2d/physics_2d_server_wrap_mt.h"
 #include "physics_2d_server.h"
 #include "physics_server.h"
-#include "script_debugger_remote.h"
 #include "visual/shader_types.h"
 #include "visual_server.h"
 
@@ -68,34 +75,64 @@ static void _debugger_get_resource_usage(List<ScriptDebuggerRemote::ResourceUsag
 		usage.vram = E->get().bytes;
 		usage.id = E->get().texture;
 		usage.type = "Texture";
-		usage.format = itos(E->get().size.width) + "x" + itos(E->get().size.height) + " " + Image::get_format_name(E->get().format);
+		if (E->get().depth == 0) {
+			usage.format = itos(E->get().width) + "x" + itos(E->get().height) + " " + Image::get_format_name(E->get().format);
+		} else {
+			usage.format = itos(E->get().width) + "x" + itos(E->get().height) + "x" + itos(E->get().depth) + " " + Image::get_format_name(E->get().format);
+		}
 		r_usage->push_back(usage);
 	}
 }
 
 ShaderTypes *shader_types = NULL;
-ARVRServer *arvr_server = NULL;
+
+PhysicsServer *_createGodotPhysicsCallback() {
+	return memnew(PhysicsServerSW);
+}
+
+Physics2DServer *_createGodotPhysics2DCallback() {
+	return Physics2DServerWrapMT::init_server<Physics2DServerSW>();
+}
+
+static bool has_server_feature_callback(const String &p_feature) {
+
+	if (VisualServer::get_singleton()) {
+		if (VisualServer::get_singleton()->has_os_feature(p_feature)) {
+			return true;
+		}
+	}
+
+	return false;
+}
 
 void register_server_types() {
-	arvr_server = memnew(ARVRServer);
 
-	ProjectSettings::get_singleton()->add_singleton(ProjectSettings::Singleton("VisualServer", VisualServer::get_singleton()));
-	ProjectSettings::get_singleton()->add_singleton(ProjectSettings::Singleton("AudioServer", AudioServer::get_singleton()));
-	ProjectSettings::get_singleton()->add_singleton(ProjectSettings::Singleton("PhysicsServer", PhysicsServer::get_singleton()));
-	ProjectSettings::get_singleton()->add_singleton(ProjectSettings::Singleton("Physics2DServer", Physics2DServer::get_singleton()));
-	ProjectSettings::get_singleton()->add_singleton(ProjectSettings::Singleton("ARVRServer", ARVRServer::get_singleton()));
+	OS::get_singleton()->set_has_server_feature_callback(has_server_feature_callback);
+
+	ClassDB::register_virtual_class<VisualServer>();
+	ClassDB::register_class<AudioServer>();
+	ClassDB::register_virtual_class<PhysicsServer>();
+	ClassDB::register_virtual_class<Physics2DServer>();
+	ClassDB::register_class<ARVRServer>();
 
 	shader_types = memnew(ShaderTypes);
 
 	ClassDB::register_virtual_class<ARVRInterface>();
 	ClassDB::register_class<ARVRPositionalTracker>();
-	ClassDB::register_class<ARVRScriptInterface>();
 
 	ClassDB::register_virtual_class<AudioStream>();
 	ClassDB::register_virtual_class<AudioStreamPlayback>();
+	ClassDB::register_virtual_class<AudioStreamPlaybackResampled>();
+	ClassDB::register_class<AudioStreamMicrophone>();
 	ClassDB::register_class<AudioStreamRandomPitch>();
 	ClassDB::register_virtual_class<AudioEffect>();
+	ClassDB::register_virtual_class<AudioEffectInstance>();
+	ClassDB::register_class<AudioEffectEQ>();
+	ClassDB::register_class<AudioEffectFilter>();
 	ClassDB::register_class<AudioBusLayout>();
+
+	ClassDB::register_class<AudioStreamGenerator>();
+	ClassDB::register_virtual_class<AudioStreamGeneratorPlayback>();
 
 	{
 		//audio effects
@@ -126,6 +163,10 @@ void register_server_types() {
 		ClassDB::register_class<AudioEffectLimiter>();
 		ClassDB::register_class<AudioEffectPitchShift>();
 		ClassDB::register_class<AudioEffectPhaser>();
+
+		ClassDB::register_class<AudioEffectRecord>();
+		ClassDB::register_class<AudioEffectSpectrumAnalyzer>();
+		ClassDB::register_virtual_class<AudioEffectSpectrumAnalyzerInstance>();
 	}
 
 	ClassDB::register_virtual_class<Physics2DDirectBodyState>();
@@ -140,13 +181,31 @@ void register_server_types() {
 	ClassDB::register_virtual_class<PhysicsShapeQueryResult>();
 
 	ScriptDebuggerRemote::resource_usage_func = _debugger_get_resource_usage;
+
+	// Physics 2D
+	GLOBAL_DEF(Physics2DServerManager::setting_property_name, "DEFAULT");
+	ProjectSettings::get_singleton()->set_custom_property_info(Physics2DServerManager::setting_property_name, PropertyInfo(Variant::STRING, Physics2DServerManager::setting_property_name, PROPERTY_HINT_ENUM, "DEFAULT"));
+
+	Physics2DServerManager::register_server("GodotPhysics", &_createGodotPhysics2DCallback);
+	Physics2DServerManager::set_default_server("GodotPhysics");
+
+	// Physics 3D
+	GLOBAL_DEF(PhysicsServerManager::setting_property_name, "DEFAULT");
+	ProjectSettings::get_singleton()->set_custom_property_info(PhysicsServerManager::setting_property_name, PropertyInfo(Variant::STRING, PhysicsServerManager::setting_property_name, PROPERTY_HINT_ENUM, "DEFAULT"));
+
+	PhysicsServerManager::register_server("GodotPhysics", &_createGodotPhysicsCallback);
+	PhysicsServerManager::set_default_server("GodotPhysics");
 }
 
 void unregister_server_types() {
 
-	//@TODO move this into iPhone/Android implementation? just have this here for testing...
-	//	mobile_interface = NULL;
-
 	memdelete(shader_types);
-	memdelete(arvr_server);
+}
+
+void register_server_singletons() {
+	Engine::get_singleton()->add_singleton(Engine::Singleton("VisualServer", VisualServer::get_singleton()));
+	Engine::get_singleton()->add_singleton(Engine::Singleton("AudioServer", AudioServer::get_singleton()));
+	Engine::get_singleton()->add_singleton(Engine::Singleton("PhysicsServer", PhysicsServer::get_singleton()));
+	Engine::get_singleton()->add_singleton(Engine::Singleton("Physics2DServer", Physics2DServer::get_singleton()));
+	Engine::get_singleton()->add_singleton(Engine::Singleton("ARVRServer", ARVRServer::get_singleton()));
 }

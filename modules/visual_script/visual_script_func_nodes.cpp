@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,11 +27,12 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "visual_script_func_nodes.h"
 
-#include "io/resource_loader.h"
-#include "os/os.h"
-#include "project_settings.h"
+#include "core/engine.h"
+#include "core/io/resource_loader.h"
+#include "core/os/os.h"
 #include "scene/main/node.h"
 #include "scene/main/scene_tree.h"
 #include "visual_script_nodes.h"
@@ -42,7 +43,7 @@
 
 int VisualScriptFunctionCall::get_output_sequence_port_count() const {
 
-	if (method_cache.flags & METHOD_FLAG_CONST || call_mode == CALL_MODE_BASIC_TYPE)
+	if ((method_cache.flags & METHOD_FLAG_CONST && call_mode != CALL_MODE_INSTANCE) || (call_mode == CALL_MODE_BASIC_TYPE && Variant::is_method_const(basic_type, function)))
 		return 0;
 	else
 		return 1;
@@ -50,7 +51,7 @@ int VisualScriptFunctionCall::get_output_sequence_port_count() const {
 
 bool VisualScriptFunctionCall::has_input_sequence_port() const {
 
-	if (method_cache.flags & METHOD_FLAG_CONST || call_mode == CALL_MODE_BASIC_TYPE)
+	if ((method_cache.flags & METHOD_FLAG_CONST && call_mode != CALL_MODE_INSTANCE) || (call_mode == CALL_MODE_BASIC_TYPE && Variant::is_method_const(basic_type, function)))
 		return false;
 	else
 		return true;
@@ -85,10 +86,7 @@ Node *VisualScriptFunctionCall::_get_base_node() const {
 		return NULL;
 
 	MainLoop *main_loop = OS::get_singleton()->get_main_loop();
-	if (!main_loop)
-		return NULL;
-
-	SceneTree *scene_tree = main_loop->cast_to<SceneTree>();
+	SceneTree *scene_tree = Object::cast_to<SceneTree>(main_loop);
 
 	if (!scene_tree)
 		return NULL;
@@ -131,9 +129,8 @@ StringName VisualScriptFunctionCall::_get_base_type() const {
 int VisualScriptFunctionCall::get_input_value_port_count() const {
 
 	if (call_mode == CALL_MODE_BASIC_TYPE) {
-
-		Vector<StringName> names = Variant::get_method_argument_names(basic_type, function);
-		return names.size() + (rpc_call_mode >= RPC_RELIABLE_TO_ID ? 1 : 0) + 1;
+		Vector<Variant::Type> types = Variant::get_method_argument_types(basic_type, function);
+		return types.size() + (rpc_call_mode >= RPC_RELIABLE_TO_ID ? 1 : 0) + 1;
 
 	} else {
 
@@ -233,7 +230,7 @@ PropertyInfo VisualScriptFunctionCall::get_output_value_port_info(int p_idx) con
 
 		if (call_mode == CALL_MODE_INSTANCE) {
 			if (p_idx == 0) {
-				return PropertyInfo(Variant::OBJECT, "pass");
+				return PropertyInfo(Variant::OBJECT, "pass", PROPERTY_HINT_TYPE_STRING, get_base_type());
 			} else {
 				p_idx--;
 			}
@@ -264,26 +261,6 @@ PropertyInfo VisualScriptFunctionCall::get_output_value_port_info(int p_idx) con
 }
 
 String VisualScriptFunctionCall::get_caption() const {
-
-	static const char *cname[5] = {
-		"CallSelf",
-		"CallNode",
-		"CallInstance",
-		"CallBasic",
-		"CallSingleton"
-	};
-
-	String caption = cname[call_mode];
-
-	if (rpc_call_mode) {
-		caption += " (RPC)";
-	}
-
-	return caption;
-}
-
-String VisualScriptFunctionCall::get_text() const {
-
 	if (call_mode == CALL_MODE_SELF)
 		return "  " + String(function) + "()";
 	if (call_mode == CALL_MODE_SINGLETON)
@@ -294,6 +271,14 @@ String VisualScriptFunctionCall::get_text() const {
 		return " [" + String(base_path.simplified()) + "]." + String(function) + "()";
 	else
 		return "  " + base_type + "." + String(function) + "()";
+}
+
+String VisualScriptFunctionCall::get_text() const {
+
+	if (rpc_call_mode) {
+		return "RPC";
+	}
+	return "";
 }
 
 void VisualScriptFunctionCall::set_basic_type(Variant::Type p_type) {
@@ -347,7 +332,7 @@ void VisualScriptFunctionCall::set_singleton(const StringName &p_type) {
 		return;
 
 	singleton = p_type;
-	Object *obj = ProjectSettings::get_singleton()->get_singleton_object(singleton);
+	Object *obj = Engine::get_singleton()->get_singleton_object(singleton);
 	if (obj) {
 		base_type = obj->get_class();
 	}
@@ -383,7 +368,7 @@ void VisualScriptFunctionCall::_update_method_cache() {
 
 	} else if (call_mode == CALL_MODE_SINGLETON) {
 
-		Object *obj = ProjectSettings::get_singleton()->get_singleton_object(singleton);
+		Object *obj = Engine::get_singleton()->get_singleton_object(singleton);
 		if (obj) {
 			type = obj->get_class();
 			script = obj->get_script();
@@ -408,7 +393,6 @@ void VisualScriptFunctionCall::_update_method_cache() {
 		}
 	}
 
-	//print_line("BASE: "+String(type)+" FUNC: "+String(function));
 	MethodBind *mb = ClassDB::get_method(type, function);
 	if (mb) {
 		use_default_args = mb->get_default_argument_count();
@@ -427,7 +411,7 @@ void VisualScriptFunctionCall::_update_method_cache() {
 
 #ifdef DEBUG_METHODS_ENABLED
 
-		method_cache.return_val = mb->get_argument_info(-1);
+		method_cache.return_val = mb->get_return_info();
 #endif
 
 		if (mb->is_vararg()) {
@@ -548,7 +532,7 @@ void VisualScriptFunctionCall::_validate_property(PropertyInfo &property) const 
 
 	if (property.name == "base_type") {
 		if (call_mode != CALL_MODE_INSTANCE) {
-			property.usage = PROPERTY_USAGE_NOEDITOR;
+			property.usage = PROPERTY_USAGE_NOEDITOR | PROPERTY_USAGE_INTERNAL;
 		}
 	}
 
@@ -568,11 +552,11 @@ void VisualScriptFunctionCall::_validate_property(PropertyInfo &property) const 
 		if (call_mode != CALL_MODE_SINGLETON) {
 			property.usage = 0;
 		} else {
-			List<ProjectSettings::Singleton> names;
-			ProjectSettings::get_singleton()->get_singletons(&names);
+			List<Engine::Singleton> names;
+			Engine::get_singleton()->get_singletons(&names);
 			property.hint = PROPERTY_HINT_ENUM;
 			String sl;
-			for (List<ProjectSettings::Singleton>::Element *E = names.front(); E; E = E->next()) {
+			for (List<Engine::Singleton>::Element *E = names.front(); E; E = E->next()) {
 				if (sl != String())
 					sl += ",";
 				sl += E->get().name;
@@ -606,7 +590,7 @@ void VisualScriptFunctionCall::_validate_property(PropertyInfo &property) const 
 			property.hint_string = itos(get_visual_script()->get_instance_id());
 		} else if (call_mode == CALL_MODE_SINGLETON) {
 
-			Object *obj = ProjectSettings::get_singleton()->get_singleton_object(singleton);
+			Object *obj = Engine::get_singleton()->get_singleton_object(singleton);
 			if (obj) {
 				property.hint = PROPERTY_HINT_METHOD_OF_INSTANCE;
 				property.hint_string = itos(obj->get_instance_id());
@@ -741,16 +725,23 @@ void VisualScriptFunctionCall::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "singleton"), "set_singleton", "get_singleton");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "basic_type", PROPERTY_HINT_ENUM, bt), "set_basic_type", "get_basic_type");
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "node_path", PROPERTY_HINT_NODE_PATH_TO_EDITED_NODE), "set_base_path", "get_base_path");
-	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "argument_cache", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR), "_set_argument_cache", "_get_argument_cache");
+	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "argument_cache", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR | PROPERTY_USAGE_INTERNAL), "_set_argument_cache", "_get_argument_cache");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "function"), "set_function", "get_function"); //when set, if loaded properly, will override argument count.
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "use_default_args"), "set_use_default_args", "get_use_default_args");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "validate"), "set_validate", "get_validate");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "rpc_call_mode", PROPERTY_HINT_ENUM, "Disabled,Reliable,Unreliable,ReliableToID,UnreliableToID"), "set_rpc_call_mode", "get_rpc_call_mode"); //when set, if loaded properly, will override argument count.
 
-	BIND_CONSTANT(CALL_MODE_SELF);
-	BIND_CONSTANT(CALL_MODE_NODE_PATH);
-	BIND_CONSTANT(CALL_MODE_INSTANCE);
-	BIND_CONSTANT(CALL_MODE_BASIC_TYPE);
+	BIND_ENUM_CONSTANT(CALL_MODE_SELF);
+	BIND_ENUM_CONSTANT(CALL_MODE_NODE_PATH);
+	BIND_ENUM_CONSTANT(CALL_MODE_INSTANCE);
+	BIND_ENUM_CONSTANT(CALL_MODE_BASIC_TYPE);
+	BIND_ENUM_CONSTANT(CALL_MODE_SINGLETON);
+
+	BIND_ENUM_CONSTANT(RPC_DISABLED);
+	BIND_ENUM_CONSTANT(RPC_RELIABLE);
+	BIND_ENUM_CONSTANT(RPC_UNRELIABLE);
+	BIND_ENUM_CONSTANT(RPC_RELIABLE_TO_ID);
+	BIND_ENUM_CONSTANT(RPC_UNRELIABLE_TO_ID);
 }
 
 class VisualScriptNodeInstanceFunctionCall : public VisualScriptNodeInstance {
@@ -759,7 +750,7 @@ public:
 	NodePath node_path;
 	int input_args;
 	bool validate;
-	bool returns;
+	int returns;
 	VisualScriptFunctionCall::RPCCallMode rpc_mode;
 	StringName function;
 	StringName singleton;
@@ -776,7 +767,7 @@ public:
 		if (!p_base)
 			return false;
 
-		Node *node = p_base->cast_to<Node>();
+		Node *node = Object::cast_to<Node>(p_base);
 		if (!node)
 			return false;
 
@@ -817,7 +808,7 @@ public:
 			} break;
 			case VisualScriptFunctionCall::CALL_MODE_NODE_PATH: {
 
-				Node *node = instance->get_owner_ptr()->cast_to<Node>();
+				Node *node = Object::cast_to<Node>(instance->get_owner_ptr());
 				if (!node) {
 					r_error.error = Variant::CallError::CALL_ERROR_INVALID_METHOD;
 					r_error_str = "Base object is not a Node!";
@@ -825,7 +816,7 @@ public:
 				}
 
 				Node *another = node->get_node(node_path);
-				if (!node) {
+				if (!another) {
 					r_error.error = Variant::CallError::CALL_ERROR_INVALID_METHOD;
 					r_error_str = "Path does not lead Node!";
 					return 0;
@@ -852,7 +843,15 @@ public:
 					}
 				} else if (returns) {
 					if (call_mode == VisualScriptFunctionCall::CALL_MODE_INSTANCE) {
-						*p_outputs[1] = v.call(function, p_inputs + 1, input_args, r_error);
+						if (returns >= 2) {
+							*p_outputs[1] = v.call(function, p_inputs + 1, input_args, r_error);
+						} else if (returns == 1) {
+							v.call(function, p_inputs + 1, input_args, r_error);
+						} else {
+							r_error.error = Variant::CallError::CALL_ERROR_INVALID_METHOD;
+							r_error_str = "Invalid returns count for call_mode == CALL_MODE_INSTANCE";
+							return 0;
+						}
 					} else {
 						*p_outputs[0] = v.call(function, p_inputs + 1, input_args, r_error);
 					}
@@ -867,7 +866,7 @@ public:
 			} break;
 			case VisualScriptFunctionCall::CALL_MODE_SINGLETON: {
 
-				Object *object = ProjectSettings::get_singleton()->get_singleton_object(singleton);
+				Object *object = Engine::get_singleton()->get_singleton_object(singleton);
 				if (!object) {
 					r_error.error = Variant::CallError::CALL_ERROR_INVALID_METHOD;
 					r_error_str = "Invalid singleton name: '" + String(singleton) + "'";
@@ -961,10 +960,8 @@ Node *VisualScriptPropertySet::_get_base_node() const {
 		return NULL;
 
 	MainLoop *main_loop = OS::get_singleton()->get_main_loop();
-	if (!main_loop)
-		return NULL;
 
-	SceneTree *scene_tree = main_loop->cast_to<SceneTree>();
+	SceneTree *scene_tree = Object::cast_to<SceneTree>(main_loop);
 
 	if (!scene_tree)
 		return NULL;
@@ -1056,7 +1053,7 @@ PropertyInfo VisualScriptPropertySet::get_output_value_port_info(int p_idx) cons
 	if (call_mode == CALL_MODE_BASIC_TYPE) {
 		return PropertyInfo(basic_type, "out");
 	} else if (call_mode == CALL_MODE_INSTANCE) {
-		return PropertyInfo(Variant::OBJECT, "pass");
+		return PropertyInfo(Variant::OBJECT, "pass", PROPERTY_HINT_TYPE_STRING, get_base_type());
 	} else {
 		return PropertyInfo();
 	}
@@ -1064,36 +1061,31 @@ PropertyInfo VisualScriptPropertySet::get_output_value_port_info(int p_idx) cons
 
 String VisualScriptPropertySet::get_caption() const {
 
-	static const char *cname[4] = {
-		"Self",
-		"Node",
-		"Instance",
-		"Basic"
+	static const char *opname[ASSIGN_OP_MAX] = {
+		"Set", "Add", "Subtract", "Multiply", "Divide", "Mod", "ShiftLeft", "ShiftRight", "BitAnd", "BitOr", "BitXor"
 	};
 
-	static const char *opname[ASSIGN_OP_MAX] = {
-		"Set", "Add", "Sub", "Mul", "Div", "Mod", "ShiftLeft", "ShiftRight", "BitAnd", "BitOr", "BitXor"
-	};
-	return String(cname[call_mode]) + opname[assign_op];
+	String prop = String(opname[assign_op]) + " " + property;
+	if (index != StringName()) {
+		prop += "." + String(index);
+	}
+
+	return prop;
 }
 
 String VisualScriptPropertySet::get_text() const {
 
-	String prop;
-
-	if (call_mode == CALL_MODE_BASIC_TYPE)
-		prop = Variant::get_type_name(basic_type) + "." + property;
-	else if (call_mode == CALL_MODE_NODE_PATH)
-		prop = String(base_path) + ":" + property;
-	else if (call_mode == CALL_MODE_SELF)
-		prop = property;
-	else if (call_mode == CALL_MODE_INSTANCE)
-		prop = String(base_type) + ":" + property;
-
-	if (index != StringName()) {
-		prop += "." + String(index);
+	if (call_mode == CALL_MODE_BASIC_TYPE) {
+		return String("On ") + Variant::get_type_name(basic_type);
 	}
-	return prop;
+
+	static const char *cname[3] = {
+		"Self",
+		"Scene Node",
+		"Instance"
+	};
+
+	return String("On ") + cname[call_mode];
 }
 
 void VisualScriptPropertySet::_update_base_type() {
@@ -1159,12 +1151,10 @@ String VisualScriptPropertySet::get_base_script() const {
 
 void VisualScriptPropertySet::_update_cache() {
 
-	if (!OS::get_singleton()->get_main_loop())
-		return;
-	if (!OS::get_singleton()->get_main_loop()->cast_to<SceneTree>())
+	if (!Object::cast_to<SceneTree>(OS::get_singleton()->get_main_loop()))
 		return;
 
-	if (!OS::get_singleton()->get_main_loop()->cast_to<SceneTree>()->is_editor_hint()) //only update cache if editor exists, it's pointless otherwise
+	if (!Engine::get_singleton()->is_editor_hint()) //only update cache if editor exists, it's pointless otherwise
 		return;
 
 	if (call_mode == CALL_MODE_BASIC_TYPE) {
@@ -1341,7 +1331,7 @@ void VisualScriptPropertySet::_validate_property(PropertyInfo &property) const {
 
 	if (property.name == "base_type") {
 		if (call_mode != CALL_MODE_INSTANCE) {
-			property.usage = PROPERTY_USAGE_NOEDITOR;
+			property.usage = PROPERTY_USAGE_NOEDITOR | PROPERTY_USAGE_INTERNAL;
 		}
 	}
 
@@ -1484,15 +1474,29 @@ void VisualScriptPropertySet::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "set_mode", PROPERTY_HINT_ENUM, "Self,Node Path,Instance,Basic Type"), "set_call_mode", "get_call_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "base_type", PROPERTY_HINT_TYPE_STRING, "Object"), "set_base_type", "get_base_type");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "base_script", PROPERTY_HINT_FILE, script_ext_hint), "set_base_script", "get_base_script");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "type_cache", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR), "_set_type_cache", "_get_type_cache");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "type_cache", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR | PROPERTY_USAGE_INTERNAL), "_set_type_cache", "_get_type_cache");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "basic_type", PROPERTY_HINT_ENUM, bt), "set_basic_type", "get_basic_type");
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "node_path", PROPERTY_HINT_NODE_PATH_TO_EDITED_NODE), "set_base_path", "get_base_path");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "property"), "set_property", "get_property");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "index"), "set_index", "get_index");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "assign_op", PROPERTY_HINT_ENUM, "Assign,Add,Sub,Mul,Div,Mod,ShiftLeft,ShiftRight,BitAnd,BitOr,Bitxor"), "set_assign_op", "get_assign_op");
-	BIND_CONSTANT(CALL_MODE_SELF);
-	BIND_CONSTANT(CALL_MODE_NODE_PATH);
-	BIND_CONSTANT(CALL_MODE_INSTANCE);
+
+	BIND_ENUM_CONSTANT(CALL_MODE_SELF);
+	BIND_ENUM_CONSTANT(CALL_MODE_NODE_PATH);
+	BIND_ENUM_CONSTANT(CALL_MODE_INSTANCE);
+	BIND_ENUM_CONSTANT(CALL_MODE_BASIC_TYPE);
+
+	BIND_ENUM_CONSTANT(ASSIGN_OP_NONE);
+	BIND_ENUM_CONSTANT(ASSIGN_OP_ADD);
+	BIND_ENUM_CONSTANT(ASSIGN_OP_SUB);
+	BIND_ENUM_CONSTANT(ASSIGN_OP_MUL);
+	BIND_ENUM_CONSTANT(ASSIGN_OP_DIV);
+	BIND_ENUM_CONSTANT(ASSIGN_OP_MOD);
+	BIND_ENUM_CONSTANT(ASSIGN_OP_SHIFT_LEFT);
+	BIND_ENUM_CONSTANT(ASSIGN_OP_SHIFT_RIGHT);
+	BIND_ENUM_CONSTANT(ASSIGN_OP_BIT_AND);
+	BIND_ENUM_CONSTANT(ASSIGN_OP_BIT_OR);
+	BIND_ENUM_CONSTANT(ASSIGN_OP_BIT_XOR);
 }
 
 class VisualScriptNodeInstancePropertySet : public VisualScriptNodeInstance {
@@ -1532,7 +1536,7 @@ public:
 					value = Variant::evaluate(Variant::OP_ADD, value, p_argument);
 				} break;
 				case VisualScriptPropertySet::ASSIGN_OP_SUB: {
-					value = Variant::evaluate(Variant::OP_SUBSTRACT, value, p_argument);
+					value = Variant::evaluate(Variant::OP_SUBTRACT, value, p_argument);
 				} break;
 				case VisualScriptPropertySet::ASSIGN_OP_MUL: {
 					value = Variant::evaluate(Variant::OP_MULTIPLY, value, p_argument);
@@ -1558,7 +1562,8 @@ public:
 				case VisualScriptPropertySet::ASSIGN_OP_BIT_XOR: {
 					value = Variant::evaluate(Variant::OP_BIT_XOR, value, p_argument);
 				} break;
-				default: {}
+				default: {
+				}
 			}
 
 			if (index != StringName()) {
@@ -1594,7 +1599,7 @@ public:
 			} break;
 			case VisualScriptPropertySet::CALL_MODE_NODE_PATH: {
 
-				Node *node = instance->get_owner_ptr()->cast_to<Node>();
+				Node *node = Object::cast_to<Node>(instance->get_owner_ptr());
 				if (!node) {
 					r_error.error = Variant::CallError::CALL_ERROR_INVALID_METHOD;
 					r_error_str = "Base object is not a Node!";
@@ -1602,7 +1607,7 @@ public:
 				}
 
 				Node *another = node->get_node(node_path);
-				if (!node) {
+				if (!another) {
 					r_error.error = Variant::CallError::CALL_ERROR_INVALID_METHOD;
 					r_error_str = "Path does not lead Node!";
 					return 0;
@@ -1729,10 +1734,8 @@ Node *VisualScriptPropertyGet::_get_base_node() const {
 		return NULL;
 
 	MainLoop *main_loop = OS::get_singleton()->get_main_loop();
-	if (!main_loop)
-		return NULL;
 
-	SceneTree *scene_tree = main_loop->cast_to<SceneTree>();
+	SceneTree *scene_tree = Object::cast_to<SceneTree>(main_loop);
 
 	if (!scene_tree)
 		return NULL;
@@ -1817,30 +1820,22 @@ PropertyInfo VisualScriptPropertyGet::get_output_value_port_info(int p_idx) cons
 
 String VisualScriptPropertyGet::get_caption() const {
 
-	static const char *cname[4] = {
-		"SelfGet",
-		"NodeGet",
-		"InstanceGet",
-		"BasicGet"
-	};
-
-	return cname[call_mode];
+	return String("Get ") + property;
 }
 
 String VisualScriptPropertyGet::get_text() const {
 
-	String prop;
+	if (call_mode == CALL_MODE_BASIC_TYPE) {
+		return String("On ") + Variant::get_type_name(basic_type);
+	}
 
-	if (call_mode == CALL_MODE_BASIC_TYPE)
-		prop = Variant::get_type_name(basic_type) + "." + property;
-	else if (call_mode == CALL_MODE_NODE_PATH)
-		prop = String(base_path) + ":" + property;
-	else if (call_mode == CALL_MODE_SELF)
-		prop = property;
-	else if (call_mode == CALL_MODE_INSTANCE)
-		prop = String(base_type) + ":" + property;
+	static const char *cname[3] = {
+		"Self",
+		"Scene Node",
+		"Instance"
+	};
 
-	return prop;
+	return String("On ") + cname[call_mode];
 }
 
 void VisualScriptPropertyGet::set_base_type(const StringName &p_type) {
@@ -2057,7 +2052,7 @@ void VisualScriptPropertyGet::_validate_property(PropertyInfo &property) const {
 
 	if (property.name == "base_type") {
 		if (call_mode != CALL_MODE_INSTANCE) {
-			property.usage = PROPERTY_USAGE_NOEDITOR;
+			property.usage = PROPERTY_USAGE_NOEDITOR | PROPERTY_USAGE_INTERNAL;
 		}
 	}
 
@@ -2196,15 +2191,15 @@ void VisualScriptPropertyGet::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "set_mode", PROPERTY_HINT_ENUM, "Self,Node Path,Instance,Basic Type"), "set_call_mode", "get_call_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "base_type", PROPERTY_HINT_TYPE_STRING, "Object"), "set_base_type", "get_base_type");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "base_script", PROPERTY_HINT_FILE, script_ext_hint), "set_base_script", "get_base_script");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "type_cache", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR), "_set_type_cache", "_get_type_cache");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "type_cache", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NOEDITOR | PROPERTY_USAGE_INTERNAL), "_set_type_cache", "_get_type_cache");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "basic_type", PROPERTY_HINT_ENUM, bt), "set_basic_type", "get_basic_type");
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "node_path", PROPERTY_HINT_NODE_PATH_TO_EDITED_NODE), "set_base_path", "get_base_path");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "property"), "set_property", "get_property");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "index", PROPERTY_HINT_ENUM), "set_index", "get_index");
 
-	BIND_CONSTANT(CALL_MODE_SELF);
-	BIND_CONSTANT(CALL_MODE_NODE_PATH);
-	BIND_CONSTANT(CALL_MODE_INSTANCE);
+	BIND_ENUM_CONSTANT(CALL_MODE_SELF);
+	BIND_ENUM_CONSTANT(CALL_MODE_NODE_PATH);
+	BIND_ENUM_CONSTANT(CALL_MODE_INSTANCE);
 }
 
 class VisualScriptNodeInstancePropertyGet : public VisualScriptNodeInstance {
@@ -2241,7 +2236,7 @@ public:
 			} break;
 			case VisualScriptPropertyGet::CALL_MODE_NODE_PATH: {
 
-				Node *node = instance->get_owner_ptr()->cast_to<Node>();
+				Node *node = Object::cast_to<Node>(instance->get_owner_ptr());
 				if (!node) {
 					r_error.error = Variant::CallError::CALL_ERROR_INVALID_METHOD;
 					r_error_str = RTR("Base object is not a Node!");
@@ -2249,7 +2244,7 @@ public:
 				}
 
 				Node *another = node->get_node(node_path);
-				if (!node) {
+				if (!another) {
 					r_error.error = Variant::CallError::CALL_ERROR_INVALID_METHOD;
 					r_error_str = RTR("Path does not lead Node!");
 					return 0;
@@ -2378,12 +2373,7 @@ PropertyInfo VisualScriptEmitSignal::get_output_value_port_info(int p_idx) const
 
 String VisualScriptEmitSignal::get_caption() const {
 
-	return "EmitSignal";
-}
-
-String VisualScriptEmitSignal::get_text() const {
-
-	return "emit " + String(name);
+	return "Emit " + String(name);
 }
 
 void VisualScriptEmitSignal::set_signal(const StringName &p_type) {

@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef OS_HAIKU_H
 #define OS_HAIKU_H
 
@@ -36,11 +37,7 @@
 #include "haiku_application.h"
 #include "haiku_direct_window.h"
 #include "main/input_default.h"
-#include "power_haiku.h"
 #include "servers/audio_server.h"
-#include "servers/physics_2d/physics_2d_server_sw.h"
-#include "servers/physics_server.h"
-#include "servers/visual/rasterizer.h"
 #include "servers/visual_server.h"
 
 class OS_Haiku : public OS_Unix {
@@ -49,18 +46,15 @@ private:
 	HaikuDirectWindow *window;
 	MainLoop *main_loop;
 	InputDefault *input;
-	Rasterizer *rasterizer;
 	VisualServer *visual_server;
 	VideoMode current_video_mode;
-	PhysicsServer *physics_server;
-	Physics2DServer *physics_2d_server;
-	PowerHaiku *power_manager;
+	int video_driver_index;
 
 #ifdef MEDIA_KIT_ENABLED
 	AudioDriverMediaKit driver_media_kit;
 #endif
 
-#if defined(OPENGL_ENABLED) || defined(LEGACYGL_ENABLED)
+#if defined(OPENGL_ENABLED)
 	ContextGL_Haiku *context_gl;
 #endif
 
@@ -69,9 +63,9 @@ private:
 protected:
 	virtual int get_video_driver_count() const;
 	virtual const char *get_video_driver_name(int p_driver) const;
-	virtual VideoMode get_default_video_mode() const;
+	virtual int get_current_video_driver() const;
 
-	virtual void initialize(const VideoMode &p_desired, int p_video_driver, int p_audio_driver);
+	virtual Error initialize(const VideoMode &p_desired, int p_video_driver, int p_audio_driver);
 	virtual void finalize();
 
 	virtual void set_main_loop(MainLoop *p_main_loop);
@@ -92,12 +86,14 @@ public:
 	virtual Point2 get_mouse_position() const;
 	virtual int get_mouse_button_state() const;
 	virtual void set_cursor_shape(CursorShape p_shape);
+	virtual CursorShape get_cursor_shape() const;
+	virtual void set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot);
 
 	virtual int get_screen_count() const;
 	virtual int get_current_screen() const;
 	virtual void set_current_screen(int p_screen);
-	virtual Point2 get_screen_position(int p_screen = 0) const;
-	virtual Size2 get_screen_size(int p_screen = 0) const;
+	virtual Point2 get_screen_position(int p_screen = -1) const;
+	virtual Size2 get_screen_size(int p_screen = -1) const;
 	virtual void set_window_title(const String &p_title);
 	virtual Size2 get_window_size() const;
 	virtual void set_window_size(const Size2 p_size);
@@ -117,11 +113,15 @@ public:
 	virtual void get_fullscreen_mode_list(List<VideoMode> *p_list, int p_screen = 0) const;
 	virtual String get_executable_path() const;
 
-	virtual PowerState get_power_state();
+	virtual OS::PowerState get_power_state();
 	virtual int get_power_seconds_left();
 	virtual int get_power_percent_left();
 
 	virtual bool _check_internal_feature_support(const String &p_feature);
+
+	virtual String get_config_path() const;
+	virtual String get_data_path() const;
+	virtual String get_cache_path() const;
 };
 
 #endif

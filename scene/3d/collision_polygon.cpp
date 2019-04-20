@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "collision_polygon.h"
 
 #include "collision_object.h"
@@ -72,23 +73,37 @@ void CollisionPolygon::_build_polygon() {
 	}
 }
 
+void CollisionPolygon::_update_in_shape_owner(bool p_xform_only) {
+
+	parent->shape_owner_set_transform(owner_id, get_transform());
+	if (p_xform_only)
+		return;
+	parent->shape_owner_set_disabled(owner_id, disabled);
+}
+
 void CollisionPolygon::_notification(int p_what) {
 
 	switch (p_what) {
 
 		case NOTIFICATION_PARENTED: {
-			parent = get_parent()->cast_to<CollisionObject>();
+			parent = Object::cast_to<CollisionObject>(get_parent());
 			if (parent) {
 				owner_id = parent->create_shape_owner(this);
 				_build_polygon();
-				parent->shape_owner_set_transform(owner_id, get_transform());
-				parent->shape_owner_set_disabled(owner_id, disabled);
+				_update_in_shape_owner();
 			}
+		} break;
+		case NOTIFICATION_ENTER_TREE: {
+
+			if (parent) {
+				_update_in_shape_owner();
+			}
+
 		} break;
 		case NOTIFICATION_LOCAL_TRANSFORM_CHANGED: {
 
 			if (parent) {
-				parent->shape_owner_set_transform(owner_id, get_transform());
+				_update_in_shape_owner(true);
 			}
 
 		} break;
@@ -117,7 +132,7 @@ Vector<Point2> CollisionPolygon::get_polygon() const {
 	return polygon;
 }
 
-Rect3 CollisionPolygon::get_item_rect() const {
+AABB CollisionPolygon::get_item_rect() const {
 
 	return aabb;
 }
@@ -147,7 +162,7 @@ bool CollisionPolygon::is_disabled() const {
 
 String CollisionPolygon::get_configuration_warning() const {
 
-	if (!get_parent()->cast_to<CollisionObject>()) {
+	if (!Object::cast_to<CollisionObject>(get_parent())) {
 		return TTR("CollisionPolygon only serves to provide a collision shape to a CollisionObject derived node. Please only use it as a child of Area, StaticBody, RigidBody, KinematicBody, etc. to give them a shape.");
 	}
 
@@ -158,6 +173,9 @@ String CollisionPolygon::get_configuration_warning() const {
 	return String();
 }
 
+bool CollisionPolygon::_is_editable_3d_polygon() const {
+	return true;
+}
 void CollisionPolygon::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_depth", "depth"), &CollisionPolygon::set_depth);
@@ -169,6 +187,8 @@ void CollisionPolygon::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_disabled", "disabled"), &CollisionPolygon::set_disabled);
 	ClassDB::bind_method(D_METHOD("is_disabled"), &CollisionPolygon::is_disabled);
 
+	ClassDB::bind_method(D_METHOD("_is_editable_3d_polygon"), &CollisionPolygon::_is_editable_3d_polygon);
+
 	ADD_PROPERTY(PropertyInfo(Variant::REAL, "depth"), "set_depth", "get_depth");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "disabled"), "set_disabled", "is_disabled");
 	ADD_PROPERTY(PropertyInfo(Variant::POOL_VECTOR2_ARRAY, "polygon"), "set_polygon", "get_polygon");
@@ -176,7 +196,7 @@ void CollisionPolygon::_bind_methods() {
 
 CollisionPolygon::CollisionPolygon() {
 
-	aabb = Rect3(Vector3(-1, -1, -1), Vector3(2, 2, 2));
+	aabb = AABB(Vector3(-1, -1, -1), Vector3(2, 2, 2));
 	depth = 1.0;
 	set_notify_local_transform(true);
 	parent = NULL;

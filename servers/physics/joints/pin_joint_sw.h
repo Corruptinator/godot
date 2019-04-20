@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -86,8 +86,8 @@ public:
 	void set_pos_a(const Vector3 &p_pos) { m_pivotInA = p_pos; }
 	void set_pos_b(const Vector3 &p_pos) { m_pivotInB = p_pos; }
 
-	Vector3 get_pos_a() { return m_pivotInB; }
-	Vector3 get_pos_b() { return m_pivotInA; }
+	Vector3 get_position_a() { return m_pivotInA; }
+	Vector3 get_position_b() { return m_pivotInB; }
 
 	PinJointSW(BodySW *p_body_a, const Vector3 &p_pos_a, BodySW *p_body_b, const Vector3 &p_pos_b);
 	~PinJointSW();

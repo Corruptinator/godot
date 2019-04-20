@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,24 +27,37 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef AUDIO_DRIVER_JAVASCRIPT_H
 #define AUDIO_DRIVER_JAVASCRIPT_H
 
 #include "servers/audio_server.h"
 
-#include "os/mutex.h"
-
 class AudioDriverJavaScript : public AudioDriver {
+
+	float *internal_buffer;
+
+	int buffer_length;
+
 public:
+	void mix_to_js();
+	void process_capture(float sample);
+
+	static AudioDriverJavaScript *singleton;
+
 	virtual const char *get_name() const;
 
 	virtual Error init();
 	virtual void start();
+	void resume();
 	virtual int get_mix_rate() const;
 	virtual SpeakerMode get_speaker_mode() const;
 	virtual void lock();
 	virtual void unlock();
 	virtual void finish();
+
+	virtual Error capture_start();
+	virtual Error capture_stop();
 
 	AudioDriverJavaScript();
 };

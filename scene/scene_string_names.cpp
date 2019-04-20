@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "scene_string_names.h"
 
 SceneStringNames *SceneStringNames::singleton = NULL;
@@ -48,7 +49,9 @@ SceneStringNames::SceneStringNames() {
 	shader_unshaded = StaticCString::create("shader/unshaded");
 	shading_mode = StaticCString::create("shader/shading_mode");
 	tree_entered = StaticCString::create("tree_entered");
+	tree_exiting = StaticCString::create("tree_exiting");
 	tree_exited = StaticCString::create("tree_exited");
+	ready = StaticCString::create("ready");
 	item_rect_changed = StaticCString::create("item_rect_changed");
 	size_flags_changed = StaticCString::create("size_flags_changed");
 	minimum_size_changed = StaticCString::create("minimum_size_changed");
@@ -87,7 +90,7 @@ SceneStringNames::SceneStringNames() {
 	_get_gizmo_geometry = StaticCString::create("_get_gizmo_geometry");
 	_can_gizmo_scale = StaticCString::create("_can_gizmo_scale");
 
-	_fixed_process = StaticCString::create("_fixed_process");
+	_physics_process = StaticCString::create("_physics_process");
 	_process = StaticCString::create("_process");
 
 	_enter_tree = StaticCString::create("_enter_tree");
@@ -98,6 +101,8 @@ SceneStringNames::SceneStringNames() {
 
 	_update_scroll = StaticCString::create("_update_scroll");
 	_update_xform = StaticCString::create("_update_xform");
+
+	_clips_input = StaticCString::create("_clips_input");
 
 	_proxgroup_add = StaticCString::create("_proxgroup_add");
 	_proxgroup_remove = StaticCString::create("_proxgroup_remove");
@@ -143,7 +148,7 @@ SceneStringNames::SceneStringNames() {
 	v_offset = StaticCString::create("v_offset");
 
 	transform_pos = StaticCString::create("position");
-	transform_rot = StaticCString::create("rotation_deg");
+	transform_rot = StaticCString::create("rotation_degrees");
 	transform_scale = StaticCString::create("scale");
 
 	_update_remote = StaticCString::create("_update_remote");
@@ -184,6 +189,8 @@ SceneStringNames::SceneStringNames() {
 
 	node_configuration_warning_changed = StaticCString::create("node_configuration_warning_changed");
 
+	output = StaticCString::create("output");
+
 	path_pp = NodePath("..");
 
 	_default = StaticCString::create("default");
@@ -194,4 +201,8 @@ SceneStringNames::SceneStringNames() {
 	}
 
 	_mesh_changed = StaticCString::create("_mesh_changed");
+
+	parameters_base_path = "parameters/";
+
+	tracks_changed = "tracks_changed";
 }

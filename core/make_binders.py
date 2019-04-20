@@ -1,6 +1,5 @@
 # -*- coding: ibm850 -*-
 
-
 template_typed = """
 #ifdef TYPED_METHOD_BIND
 template<class T $ifret ,class R$ $ifargs ,$ $arg, class P@$>
@@ -16,12 +15,11 @@ public:
 		$
 		return Variant::NIL;
 	}
-	virtual StringName _gen_argument_type_name(int p_arg) const { return _gen_argument_type_hint(p_arg); }
-	StringName _gen_argument_type_hint(int p_argument) const {
-		$ifret if (p_argument==-1) return GetTypeInfo<R>::get_class_name();$
-		$arg if (p_argument==(@-1)) return GetTypeInfo<P@>::get_class_name();
+	virtual PropertyInfo _gen_argument_type_info(int p_argument) const {
+		$ifret if (p_argument==-1) return GetTypeInfo<R>::get_class_info();$
+		$arg if (p_argument==(@-1)) return GetTypeInfo<P@>::get_class_info();
 		$
-		return StringName();
+		return PropertyInfo();
 	}
 #endif
 	virtual String get_instance_class() const {
@@ -30,7 +28,7 @@ public:
 
 	virtual Variant call(Object* p_object,const Variant** p_args,int p_arg_count, Variant::CallError& r_error) {
 
-		T *instance=p_object->cast_to<T>();
+		T *instance=Object::cast_to<T>(p_object);
 		r_error.error=Variant::CallError::CALL_OK;
 #ifdef DEBUG_METHODS_ENABLED
 
@@ -58,7 +56,7 @@ public:
 #ifdef PTRCALL_ENABLED
 	virtual void ptrcall(Object*p_object,const void** p_args,void *r_ret) {
 
-		T *instance=p_object->cast_to<T>();
+		T *instance=Object::cast_to<T>(p_object);
 		$ifret PtrToArg<R>::encode( $ (instance->*method)($arg, PtrToArg<P@>::convert(p_args[@-1])$) $ifret ,r_ret)$ ;
 	}
 #endif
@@ -104,14 +102,13 @@ public:
 		return Variant::NIL;
 	}
 
-	virtual StringName _gen_argument_type_name(int p_arg) const { return _gen_argument_type_hint(p_arg); }
-
-	StringName _gen_argument_type_hint(int p_argument) const {
-		$ifret if (p_argument==-1) return GetTypeInfo<R>::get_class_name();$
-		$arg if (p_argument==(@-1)) return GetTypeInfo<P@>::get_class_name();
+	virtual PropertyInfo _gen_argument_type_info(int p_argument) const {
+		$ifret if (p_argument==-1) return GetTypeInfo<R>::get_class_info();$
+		$arg if (p_argument==(@-1)) return GetTypeInfo<P@>::get_class_info();
 		$
-		return StringName();
+		return PropertyInfo();
 	}
+
 #endif
 	virtual String get_instance_class() const {
 		return type_name;
@@ -246,7 +243,7 @@ def make_version(template, nargs, argmax, const, ret):
 
 def run(target, source, env):
 
-    versions = 10
+    versions = 13
     versions_ext = 6
     text = ""
     text_ext = ""
@@ -267,10 +264,13 @@ def run(target, source, env):
         else:
             text += t
 
-    f = open(target[0].path, "w")
-    f.write(text)
-    f.close()
+    with open(target[0], "w") as f:
+        f.write(text)
 
-    f = open(target[1].path, "w")
-    f.write(text_ext)
-    f.close()
+    with open(target[1], "w") as f:
+        f.write(text_ext)
+
+
+if __name__ == '__main__':
+    from platform_methods import subprocess_main
+    subprocess_main(globals())

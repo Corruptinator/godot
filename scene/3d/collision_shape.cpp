@@ -1,12 +1,12 @@
 /*************************************************************************/
-/*  body_shape.cpp                                                       */
+/*  collision_shape.cpp                                                  */
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "collision_shape.h"
 #include "scene/resources/box_shape.h"
 #include "scene/resources/capsule_shape.h"
@@ -37,9 +38,9 @@
 #include "scene/resources/sphere_shape.h"
 #include "servers/visual_server.h"
 //TODO: Implement CylinderShape and HeightMapShape?
+#include "core/math/quick_hull.h"
 #include "mesh_instance.h"
 #include "physics_body.h"
-#include "quick_hull.h"
 
 void CollisionShape::make_convex_from_brothers() {
 
@@ -50,9 +51,9 @@ void CollisionShape::make_convex_from_brothers() {
 	for (int i = 0; i < p->get_child_count(); i++) {
 
 		Node *n = p->get_child(i);
-		if (n->cast_to<MeshInstance>()) {
+		MeshInstance *mi = Object::cast_to<MeshInstance>(n);
+		if (mi) {
 
-			MeshInstance *mi = n->cast_to<MeshInstance>();
 			Ref<Mesh> m = mi->get_mesh();
 			if (m.is_valid()) {
 
@@ -63,30 +64,39 @@ void CollisionShape::make_convex_from_brothers() {
 	}
 }
 
+void CollisionShape::_update_in_shape_owner(bool p_xform_only) {
+
+	parent->shape_owner_set_transform(owner_id, get_transform());
+	if (p_xform_only)
+		return;
+	parent->shape_owner_set_disabled(owner_id, disabled);
+}
+
 void CollisionShape::_notification(int p_what) {
 
 	switch (p_what) {
 
 		case NOTIFICATION_PARENTED: {
-			parent = get_parent()->cast_to<CollisionObject>();
+			parent = Object::cast_to<CollisionObject>(get_parent());
 			if (parent) {
 				owner_id = parent->create_shape_owner(this);
 				if (shape.is_valid()) {
 					parent->shape_owner_add_shape(owner_id, shape);
 				}
-				parent->shape_owner_set_transform(owner_id, get_transform());
-				parent->shape_owner_set_disabled(owner_id, disabled);
+				_update_in_shape_owner();
 			}
 		} break;
 		case NOTIFICATION_ENTER_TREE: {
+			if (parent) {
+				_update_in_shape_owner();
+			}
 			if (get_tree()->is_debugging_collisions_hint()) {
 				_create_debug_shape();
 			}
-
 		} break;
 		case NOTIFICATION_LOCAL_TRANSFORM_CHANGED: {
 			if (parent) {
-				parent->shape_owner_set_transform(owner_id, get_transform());
+				_update_in_shape_owner(true);
 			}
 		} break;
 		case NOTIFICATION_UNPARENTED: {
@@ -106,12 +116,16 @@ void CollisionShape::resource_changed(RES res) {
 
 String CollisionShape::get_configuration_warning() const {
 
-	if (!get_parent()->cast_to<CollisionObject>()) {
+	if (!Object::cast_to<CollisionObject>(get_parent())) {
 		return TTR("CollisionShape only serves to provide a collision shape to a CollisionObject derived node. Please only use it as a child of Area, StaticBody, RigidBody, KinematicBody, etc. to give them a shape.");
 	}
 
 	if (!shape.is_valid()) {
 		return TTR("A shape must be provided for CollisionShape to function. Please create a shape resource for it!");
+	}
+
+	if (shape->is_class("PlaneShape")) {
+		return TTR("Plane shapes don't work well and will be removed in future versions. Please don't use them.");
 	}
 
 	return String();

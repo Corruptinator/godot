@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,7 +27,9 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "java_class_wrapper.h"
+#include "string_android.h"
 #include "thread_jandroid.h"
 
 bool JavaClass::_call_method(JavaObject *p_instance, const StringName &p_method, const Variant **p_args, int p_argcount, Variant::CallError &r_error, Variant &ret) {
@@ -59,7 +61,7 @@ bool JavaClass::_call_method(JavaObject *p_instance, const StringName &p_method,
 			r_error.argument = pc;
 			continue;
 		}
-		uint32_t *ptypes = E->get().param_types.ptr();
+		uint32_t *ptypes = E->get().param_types.ptrw();
 		bool valid = true;
 
 		for (int i = 0; i < pc; i++) {
@@ -112,7 +114,7 @@ bool JavaClass::_call_method(JavaObject *p_instance, const StringName &p_method,
 
 						Ref<Reference> ref = *p_args[i];
 						if (!ref.is_null()) {
-							if (ref->cast_to<JavaObject>()) {
+							if (Object::cast_to<JavaObject>(ref.ptr())) {
 
 								Ref<JavaObject> jo = ref;
 								//could be faster
@@ -552,8 +554,7 @@ void JavaClassWrapper::_bind_methods() {
 bool JavaClassWrapper::_get_type_sig(JNIEnv *env, jobject obj, uint32_t &sig, String &strsig) {
 
 	jstring name2 = (jstring)env->CallObjectMethod(obj, Class_getName);
-	String str_type = env->GetStringUTFChars(name2, NULL);
-	print_line("name: " + str_type);
+	String str_type = jstring_to_string(name2, env);
 	env->DeleteLocalRef(name2);
 	uint32_t t = 0;
 
@@ -697,7 +698,7 @@ bool JavaClass::_convert_object_to_variant(JNIEnv *env, jobject obj, Variant &va
 		} break;
 		case ARG_TYPE_STRING: {
 
-			var = String::utf8(env->GetStringUTFChars((jstring)obj, NULL));
+			var = jstring_to_string((jstring)obj, env);
 			return true;
 		} break;
 		case ARG_TYPE_CLASS: {
@@ -1030,7 +1031,7 @@ bool JavaClass::_convert_object_to_variant(JNIEnv *env, jobject obj, Variant &va
 				if (!o)
 					ret.push_back(Variant());
 				else {
-					String val = String::utf8(env->GetStringUTFChars((jstring)o, NULL));
+					String val = jstring_to_string((jstring)o, env);
 					ret.push_back(val);
 				}
 				env->DeleteLocalRef(o);
@@ -1075,7 +1076,7 @@ Ref<JavaClass> JavaClassWrapper::wrap(const String &p_class) {
 		ERR_CONTINUE(!obj);
 
 		jstring name = (jstring)env->CallObjectMethod(obj, getName);
-		String str_method = env->GetStringUTFChars(name, NULL);
+		String str_method = jstring_to_string(name, env);
 		env->DeleteLocalRef(name);
 
 		Vector<String> params;
@@ -1116,7 +1117,7 @@ Ref<JavaClass> JavaClassWrapper::wrap(const String &p_class) {
 		}
 
 		if (!valid) {
-			print_line("Method Can't be bound (unsupported arguments): " + p_class + "::" + str_method);
+			print_line("Method can't be bound (unsupported arguments): " + p_class + "::" + str_method);
 			env->DeleteLocalRef(obj);
 			env->DeleteLocalRef(param_types);
 			continue;
@@ -1129,7 +1130,7 @@ Ref<JavaClass> JavaClassWrapper::wrap(const String &p_class) {
 		String strsig;
 		uint32_t sig = 0;
 		if (!_get_type_sig(env, return_type, sig, strsig)) {
-			print_line("Method Can't be bound (unsupported return type): " + p_class + "::" + str_method);
+			print_line("Method can't be bound (unsupported return type): " + p_class + "::" + str_method);
 			env->DeleteLocalRef(obj);
 			env->DeleteLocalRef(param_types);
 			env->DeleteLocalRef(return_type);
@@ -1138,8 +1139,6 @@ Ref<JavaClass> JavaClassWrapper::wrap(const String &p_class) {
 
 		signature += strsig;
 		mi.return_type = sig;
-
-		print_line("METHOD: " + str_method + " SIG: " + signature + " static: " + itos(mi._static));
 
 		bool discard = false;
 
@@ -1172,11 +1171,9 @@ Ref<JavaClass> JavaClassWrapper::wrap(const String &p_class) {
 
 			if (new_likeliness > existing_likeliness) {
 				java_class->methods[str_method].erase(E);
-				print_line("replace old");
 				break;
 			} else {
 				discard = true;
-				print_line("old is better");
 			}
 		}
 
@@ -1194,9 +1191,6 @@ Ref<JavaClass> JavaClassWrapper::wrap(const String &p_class) {
 		env->DeleteLocalRef(obj);
 		env->DeleteLocalRef(param_types);
 		env->DeleteLocalRef(return_type);
-
-		//args[i] = _jobject_to_variant(env, obj);
-		//print_line("\targ"+itos(i)+": "+Variant::get_type_name(args[i].get_type()));
 	};
 
 	env->DeleteLocalRef(methods);
@@ -1211,9 +1205,8 @@ Ref<JavaClass> JavaClassWrapper::wrap(const String &p_class) {
 		ERR_CONTINUE(!obj);
 
 		jstring name = (jstring)env->CallObjectMethod(obj, Field_getName);
-		String str_field = env->GetStringUTFChars(name, NULL);
+		String str_field = jstring_to_string(name, env);
 		env->DeleteLocalRef(name);
-		print_line("FIELD: " + str_field);
 		int mods = env->CallIntMethod(obj, Field_getModifiers);
 		if ((mods & 0x8) && (mods & 0x10) && (mods & 0x1)) { //static final public!
 

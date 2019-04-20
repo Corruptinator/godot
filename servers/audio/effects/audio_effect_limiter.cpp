@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,22 +27,18 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "audio_effect_limiter.h"
 
 void AudioEffectLimiterInstance::process(const AudioFrame *p_src_frames, AudioFrame *p_dst_frames, int p_frame_count) {
 
-	float thresh = Math::db2linear(base->threshold);
 	float threshdb = base->threshold;
 	float ceiling = Math::db2linear(base->ceiling);
 	float ceildb = base->ceiling;
 	float makeup = Math::db2linear(ceildb - threshdb);
-	float makeupdb = ceildb - threshdb;
 	float sc = -base->soft_clip;
 	float scv = Math::db2linear(sc);
-	float sccomp = Math::db2linear(-sc);
 	float peakdb = ceildb + 25;
-	float peaklvl = Math::db2linear(peakdb);
-	float scratio = base->soft_clip_ratio;
 	float scmult = Math::abs((ceildb - sc) / (peakdb - sc));
 
 	for (int i = 0; i < p_frame_count; i++) {
@@ -115,7 +111,7 @@ void AudioEffectLimiter::set_soft_clip_ratio(float p_soft_clip) {
 }
 float AudioEffectLimiter::get_soft_clip_ratio() const {
 
-	return soft_clip;
+	return soft_clip_ratio;
 }
 
 void AudioEffectLimiter::_bind_methods() {

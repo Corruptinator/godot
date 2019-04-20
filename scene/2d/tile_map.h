@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,14 +27,15 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef TILE_MAP_H
 #define TILE_MAP_H
 
-#include "scene/2d/navigation2d.h"
+#include "core/self_list.h"
+#include "core/vset.h"
+#include "scene/2d/navigation_2d.h"
 #include "scene/2d/node_2d.h"
 #include "scene/resources/tile_set.h"
-#include "self_list.h"
-#include "vset.h"
 
 class TileMap : public Node2D {
 
@@ -51,6 +52,8 @@ public:
 		HALF_OFFSET_X,
 		HALF_OFFSET_Y,
 		HALF_OFFSET_DISABLED,
+		HALF_OFFSET_NEGATIVE_X,
+		HALF_OFFSET_NEGATIVE_Y,
 	};
 
 	enum TileOrigin {
@@ -60,10 +63,14 @@ public:
 	};
 
 private:
+	enum DataFormat {
+		FORMAT_1 = 0,
+		FORMAT_2
+	};
+
 	Ref<TileSet> tile_set;
 	Size2i cell_size;
 	int quadrant_size;
-	bool center_x, center_y;
 	Mode mode;
 	Transform2D custom_transform;
 	HalfOffset half_offset;
@@ -80,6 +87,8 @@ private:
 
 		//using a more precise comparison so the regions can be sorted later
 		bool operator<(const PosKey &p_k) const { return (y == p_k.y) ? x < p_k.x : y < p_k.y; }
+
+		bool operator==(const PosKey &p_k) const { return (y == p_k.y && x == p_k.x); }
 
 		PosKey(int16_t p_x, int16_t p_y) {
 			x = p_x;
@@ -98,13 +107,17 @@ private:
 			bool flip_h : 1;
 			bool flip_v : 1;
 			bool transpose : 1;
+			int16_t autotile_coord_x : 16;
+			int16_t autotile_coord_y : 16;
 		};
 
-		uint32_t _u32t;
-		Cell() { _u32t = 0; }
+		uint64_t _u64t;
+		Cell() { _u64t = 0; }
 	};
 
 	Map<PosKey, Cell> tile_map;
+	List<PosKey> dirty_bitmask;
+
 	struct Quadrant {
 
 		Vector2 pos;
@@ -136,8 +149,8 @@ private:
 			navpoly_ids = q.navpoly_ids;
 			occluder_instances = q.occluder_instances;
 		}
-		Quadrant(const Quadrant &q)
-			: dirty_list(this) {
+		Quadrant(const Quadrant &q) :
+				dirty_list(this) {
 			pos = q.pos;
 			canvas_items = q.canvas_items;
 			body = q.body;
@@ -145,8 +158,8 @@ private:
 			occluder_instances = q.occluder_instances;
 			navpoly_ids = q.navpoly_ids;
 		}
-		Quadrant()
-			: dirty_list(this) {}
+		Quadrant() :
+				dirty_list(this) {}
 	};
 
 	Map<PosKey, Quadrant> quadrant_map;
@@ -161,11 +174,13 @@ private:
 	bool used_size_cache_dirty;
 	bool quadrant_order_dirty;
 	bool y_sort_mode;
+	bool clip_uv;
 	float fp_adjust;
 	float friction;
 	float bounce;
 	uint32_t collision_layer;
 	uint32_t collision_mask;
+	mutable DataFormat format;
 
 	TileOrigin tile_origin;
 
@@ -175,13 +190,15 @@ private:
 
 	Map<PosKey, Quadrant>::Element *_create_quadrant(const PosKey &p_qk);
 	void _erase_quadrant(Map<PosKey, Quadrant>::Element *Q);
-	void _make_quadrant_dirty(Map<PosKey, Quadrant>::Element *Q);
+	void _make_quadrant_dirty(Map<PosKey, Quadrant>::Element *Q, bool update = true);
 	void _recreate_quadrants();
 	void _clear_quadrants();
-	void _update_dirty_quadrants();
 	void _update_quadrant_space(const RID &p_space);
 	void _update_quadrant_transform();
 	void _recompute_rect_cache();
+
+	void _update_all_items_material_state();
+	_FORCE_INLINE_ void _update_item_material_state(const RID &p_canvas_item);
 
 	_FORCE_INLINE_ int _get_quadrant_size() const;
 
@@ -194,13 +211,21 @@ private:
 	_FORCE_INLINE_ Vector2 _map_to_world(int p_x, int p_y, bool p_ignore_ofs = false) const;
 
 protected:
+	bool _set(const StringName &p_name, const Variant &p_value);
+	bool _get(const StringName &p_name, Variant &r_ret) const;
+	void _get_property_list(List<PropertyInfo> *p_list) const;
+
 	void _notification(int p_what);
 	static void _bind_methods();
+
+	virtual void _changed_callback(Object *p_changed, const char *p_prop);
 
 public:
 	enum {
 		INVALID_CELL = -1
 	};
+
+	virtual Rect2 _edit_get_rect() const;
 
 	void set_tileset(const Ref<TileSet> &p_tileset);
 	Ref<TileSet> get_tileset() const;
@@ -211,21 +236,25 @@ public:
 	void set_quadrant_size(int p_size);
 	int get_quadrant_size() const;
 
-	void set_center_x(bool p_enable);
-	bool get_center_x() const;
-	void set_center_y(bool p_enable);
-	bool get_center_y() const;
-
-	void set_cell(int p_x, int p_y, int p_tile, bool p_flip_x = false, bool p_flip_y = false, bool p_transpose = false);
+	void set_cell(int p_x, int p_y, int p_tile, bool p_flip_x = false, bool p_flip_y = false, bool p_transpose = false, Vector2 p_autotile_coord = Vector2());
 	int get_cell(int p_x, int p_y) const;
 	bool is_cell_x_flipped(int p_x, int p_y) const;
 	bool is_cell_y_flipped(int p_x, int p_y) const;
 	bool is_cell_transposed(int p_x, int p_y) const;
+	void set_cell_autotile_coord(int p_x, int p_y, const Vector2 &p_coord);
+	Vector2 get_cell_autotile_coord(int p_x, int p_y) const;
 
+	void _set_celld(const Vector2 &p_pos, const Dictionary &p_data);
 	void set_cellv(const Vector2 &p_pos, int p_tile, bool p_flip_x = false, bool p_flip_y = false, bool p_transpose = false);
 	int get_cellv(const Vector2 &p_pos) const;
 
-	Rect2 get_item_rect() const;
+	void make_bitmask_area_dirty(const Vector2 &p_pos);
+	void update_bitmask_area(const Vector2 &p_pos);
+	void update_bitmask_region(const Vector2 &p_start = Vector2(), const Vector2 &p_end = Vector2());
+	void update_cell_bitmask(int p_x, int p_y);
+	void update_dirty_bitmask();
+
+	void update_dirty_quadrants();
 
 	void set_collision_layer(uint32_t p_layer);
 	uint32_t get_collision_layer() const;
@@ -278,6 +307,14 @@ public:
 
 	virtual void set_light_mask(int p_light_mask);
 
+	virtual void set_material(const Ref<Material> &p_material);
+
+	virtual void set_use_parent_material(bool p_use_parent_material);
+
+	void set_clip_uv(bool p_enable);
+	bool get_clip_uv() const;
+
+	void fix_invalid_tiles();
 	void clear();
 
 	TileMap();

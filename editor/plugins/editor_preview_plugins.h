@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,25 +27,40 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef EDITORPREVIEWPLUGINS_H
 #define EDITORPREVIEWPLUGINS_H
 
 #include "editor/editor_resource_preview.h"
 
+void post_process_preview(Ref<Image> p_image);
+
 class EditorTexturePreviewPlugin : public EditorResourcePreviewGenerator {
 	GDCLASS(EditorTexturePreviewPlugin, EditorResourcePreviewGenerator)
 public:
 	virtual bool handles(const String &p_type) const;
-	virtual Ref<Texture> generate(const RES &p_from);
+	virtual bool should_generate_small_preview() const;
+	virtual Ref<Texture> generate(const RES &p_from, const Size2 p_size) const;
 
 	EditorTexturePreviewPlugin();
+};
+
+class EditorImagePreviewPlugin : public EditorResourcePreviewGenerator {
+	GDCLASS(EditorImagePreviewPlugin, EditorResourcePreviewGenerator)
+public:
+	virtual bool handles(const String &p_type) const;
+	virtual bool should_generate_small_preview() const;
+	virtual Ref<Texture> generate(const RES &p_from, const Size2 p_size) const;
+
+	EditorImagePreviewPlugin();
 };
 
 class EditorBitmapPreviewPlugin : public EditorResourcePreviewGenerator {
 	GDCLASS(EditorBitmapPreviewPlugin, EditorResourcePreviewGenerator)
 public:
 	virtual bool handles(const String &p_type) const;
-	virtual Ref<Texture> generate(const RES &p_from);
+	virtual bool should_generate_small_preview() const;
+	virtual Ref<Texture> generate(const RES &p_from, const Size2 p_size) const;
 
 	EditorBitmapPreviewPlugin();
 };
@@ -54,8 +69,8 @@ class EditorPackedScenePreviewPlugin : public EditorResourcePreviewGenerator {
 
 public:
 	virtual bool handles(const String &p_type) const;
-	virtual Ref<Texture> generate(const RES &p_from);
-	virtual Ref<Texture> generate_from_path(const String &p_path);
+	virtual Ref<Texture> generate(const RES &p_from, const Size2 p_size) const;
+	virtual Ref<Texture> generate_from_path(const String &p_path, const Size2 p_size) const;
 
 	EditorPackedScenePreviewPlugin();
 };
@@ -74,7 +89,7 @@ class EditorMaterialPreviewPlugin : public EditorResourcePreviewGenerator {
 	RID light2;
 	RID light_instance2;
 	RID camera;
-	volatile bool preview_done;
+	mutable volatile bool preview_done;
 
 	void _preview_done(const Variant &p_udata);
 
@@ -83,7 +98,8 @@ protected:
 
 public:
 	virtual bool handles(const String &p_type) const;
-	virtual Ref<Texture> generate(const RES &p_from);
+	virtual bool should_generate_small_preview() const;
+	virtual Ref<Texture> generate(const RES &p_from, const Size2 p_size) const;
 
 	EditorMaterialPreviewPlugin();
 	~EditorMaterialPreviewPlugin();
@@ -92,22 +108,19 @@ public:
 class EditorScriptPreviewPlugin : public EditorResourcePreviewGenerator {
 public:
 	virtual bool handles(const String &p_type) const;
-	virtual Ref<Texture> generate(const RES &p_from);
+	virtual Ref<Texture> generate(const RES &p_from, const Size2 p_size) const;
 
 	EditorScriptPreviewPlugin();
 };
 
-#if 0
-class EditorSamplePreviewPlugin : public EditorResourcePreviewGenerator {
+class EditorAudioStreamPreviewPlugin : public EditorResourcePreviewGenerator {
 public:
+	virtual bool handles(const String &p_type) const;
+	virtual Ref<Texture> generate(const RES &p_from, const Size2 p_size) const;
 
-	virtual bool handles(const String& p_type) const;
-	virtual Ref<Texture> generate(const RES& p_from);
-
-	EditorSamplePreviewPlugin();
+	EditorAudioStreamPreviewPlugin();
 };
 
-#endif
 class EditorMeshPreviewPlugin : public EditorResourcePreviewGenerator {
 
 	GDCLASS(EditorMeshPreviewPlugin, EditorResourcePreviewGenerator)
@@ -121,7 +134,7 @@ class EditorMeshPreviewPlugin : public EditorResourcePreviewGenerator {
 	RID light2;
 	RID light_instance2;
 	RID camera;
-	volatile bool preview_done;
+	mutable volatile bool preview_done;
 
 	void _preview_done(const Variant &p_udata);
 
@@ -130,10 +143,33 @@ protected:
 
 public:
 	virtual bool handles(const String &p_type) const;
-	virtual Ref<Texture> generate(const RES &p_from);
+	virtual Ref<Texture> generate(const RES &p_from, const Size2 p_size) const;
 
 	EditorMeshPreviewPlugin();
 	~EditorMeshPreviewPlugin();
 };
 
+class EditorFontPreviewPlugin : public EditorResourcePreviewGenerator {
+
+	GDCLASS(EditorFontPreviewPlugin, EditorResourcePreviewGenerator)
+
+	RID viewport;
+	RID viewport_texture;
+	RID canvas;
+	RID canvas_item;
+	mutable volatile bool preview_done;
+
+	void _preview_done(const Variant &p_udata);
+
+protected:
+	static void _bind_methods();
+
+public:
+	virtual bool handles(const String &p_type) const;
+	virtual Ref<Texture> generate(const RES &p_from, const Size2 p_size) const;
+	virtual Ref<Texture> generate_from_path(const String &p_path, const Size2 p_size) const;
+
+	EditorFontPreviewPlugin();
+	~EditorFontPreviewPlugin();
+};
 #endif // EDITORPREVIEWPLUGINS_H

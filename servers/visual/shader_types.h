@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,17 +27,20 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef SHADERTYPES_H
 #define SHADERTYPES_H
 
+#include "core/ordered_hash_map.h"
 #include "servers/visual_server.h"
 #include "shader_language.h"
+
 class ShaderTypes {
 
 	struct Type {
 
-		Map<StringName, Map<StringName, ShaderLanguage::DataType> > functions;
-		Set<String> modes;
+		Map<StringName, ShaderLanguage::FunctionInfo> functions;
+		Vector<StringName> modes;
 	};
 
 	Map<VS::ShaderMode, Type> shader_modes;
@@ -49,8 +52,8 @@ class ShaderTypes {
 public:
 	static ShaderTypes *get_singleton() { return singleton; }
 
-	const Map<StringName, Map<StringName, ShaderLanguage::DataType> > &get_functions(VS::ShaderMode p_mode);
-	const Set<String> &get_modes(VS::ShaderMode p_mode);
+	const Map<StringName, ShaderLanguage::FunctionInfo> &get_functions(VS::ShaderMode p_mode);
+	const Vector<StringName> &get_modes(VS::ShaderMode p_mode);
 	const Set<String> &get_types();
 
 	ShaderTypes();

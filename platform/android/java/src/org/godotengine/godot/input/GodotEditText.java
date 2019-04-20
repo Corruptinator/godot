@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,16 +27,18 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 package org.godotengine.godot.input;
 import android.content.Context;
-import android.util.AttributeSet;
-import android.view.KeyEvent;
-import android.widget.EditText;
-import org.godotengine.godot.*;
 import android.os.Handler;
 import android.os.Message;
-import android.view.inputmethod.InputMethodManager;
+import android.util.AttributeSet;
+import android.view.KeyEvent;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
+import java.lang.ref.WeakReference;
+import org.godotengine.godot.*;
 
 public class GodotEditText extends EditText {
 	// ===========================================================
@@ -50,8 +52,23 @@ public class GodotEditText extends EditText {
 	// ===========================================================
 	private GodotView mView;
 	private GodotTextInputWrapper mInputWrapper;
-	private static Handler sHandler;
+	private EditHandler sHandler = new EditHandler(this);
 	private String mOriginText;
+
+	private static class EditHandler extends Handler {
+		private final WeakReference<GodotEditText> mEdit;
+		public EditHandler(GodotEditText edit) {
+			mEdit = new WeakReference<>(edit);
+		}
+
+		@Override
+		public void handleMessage(Message msg) {
+			GodotEditText edit = mEdit.get();
+			if (edit != null) {
+				edit.handleMessage(msg);
+			}
+		}
+	}
 
 	// ===========================================================
 	// Constructors
@@ -70,45 +87,37 @@ public class GodotEditText extends EditText {
 		super(context, attrs, defStyle);
 		this.initView();
 	}
-	
-	protected void initView() {
-		this.setPadding(0,  0, 0, 0);
-		this.setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI);
-		
-		sHandler = new Handler() {
-			@Override
-			public void handleMessage(final Message msg) {
-				switch (msg.what) {
-					case HANDLER_OPEN_IME_KEYBOARD:
-						{
-							GodotEditText edit = (GodotEditText) msg.obj;
-							String text = edit.mOriginText;
-							if (edit.requestFocus())
-							{
-								edit.removeTextChangedListener(edit.mInputWrapper);
-								edit.setText("");
-								edit.append(text);
-								edit.mInputWrapper.setOriginText(text);
-								edit.addTextChangedListener(edit.mInputWrapper);
-								final InputMethodManager imm = (InputMethodManager) mView.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
-								imm.showSoftInput(edit, 0);
-							}
-						}
-						break;
 
-					case HANDLER_CLOSE_IME_KEYBOARD:
-						{
-							GodotEditText edit = (GodotEditText) msg.obj;
-							
-							edit.removeTextChangedListener(mInputWrapper);
-							final InputMethodManager imm = (InputMethodManager) mView.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
-							imm.hideSoftInputFromWindow(edit.getWindowToken(), 0);
-							edit.mView.requestFocus();
-						}
-						break;
+	protected void initView() {
+		this.setPadding(0, 0, 0, 0);
+		this.setImeOptions(EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+	}
+
+	private void handleMessage(final Message msg) {
+		switch (msg.what) {
+			case HANDLER_OPEN_IME_KEYBOARD: {
+				GodotEditText edit = (GodotEditText)msg.obj;
+				String text = edit.mOriginText;
+				if (edit.requestFocus()) {
+					edit.removeTextChangedListener(edit.mInputWrapper);
+					edit.setText("");
+					edit.append(text);
+					edit.mInputWrapper.setOriginText(text);
+					edit.addTextChangedListener(edit.mInputWrapper);
+					final InputMethodManager imm = (InputMethodManager)mView.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+					imm.showSoftInput(edit, 0);
 				}
-			}
-		};
+			} break;
+
+			case HANDLER_CLOSE_IME_KEYBOARD: {
+				GodotEditText edit = (GodotEditText)msg.obj;
+
+				edit.removeTextChangedListener(mInputWrapper);
+				final InputMethodManager imm = (InputMethodManager)mView.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+				imm.hideSoftInputFromWindow(edit.getWindowToken(), 0);
+				edit.mView.requestFocus();
+			} break;
+		}
 	}
 
 	// ===========================================================
@@ -116,7 +125,7 @@ public class GodotEditText extends EditText {
 	// ===========================================================
 	public void setView(final GodotView view) {
 		this.mView = view;
-		if(mInputWrapper == null)
+		if (mInputWrapper == null)
 			mInputWrapper = new GodotTextInputWrapper(mView, this);
 		this.setOnEditorActionListener(mInputWrapper);
 		view.requestFocus();
@@ -125,7 +134,7 @@ public class GodotEditText extends EditText {
 	// ===========================================================
 	// Methods for/from SuperClass/Interfaces
 	// ===========================================================
-    @Override
+	@Override
 	public boolean onKeyDown(final int keyCode, final KeyEvent keyEvent) {
 		super.onKeyDown(keyCode, keyEvent);
 
@@ -142,7 +151,7 @@ public class GodotEditText extends EditText {
 	// ===========================================================
 	public void showKeyboard(String p_existing_text) {
 		this.mOriginText = p_existing_text;
-		
+
 		final Message msg = new Message();
 		msg.what = HANDLER_OPEN_IME_KEYBOARD;
 		msg.obj = this;
@@ -155,7 +164,7 @@ public class GodotEditText extends EditText {
 		msg.obj = this;
 		sHandler.sendMessage(msg);
 	}
-	
+
 	// ===========================================================
 	// Inner and Anonymous Classes
 	// ===========================================================

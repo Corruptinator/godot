@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef VISUALSERVERCANVAS_H
 #define VISUALSERVERCANVAS_H
 
@@ -39,7 +40,7 @@ public:
 
 		RID parent; // canvas it belongs to
 		List<Item *>::Element *E;
-		int z;
+		int z_index;
 		bool z_relative;
 		bool sort_y;
 		Color modulate;
@@ -47,19 +48,25 @@ public:
 		bool use_parent_material;
 		int index;
 		bool children_order_dirty;
+		int ysort_children_count;
+		Transform2D ysort_xform;
+		Vector2 ysort_pos;
 
 		Vector<Item *> child_items;
 
 		Item() {
 			children_order_dirty = true;
 			E = NULL;
-			z = 0;
+			z_index = 0;
 			modulate = Color(1, 1, 1, 1);
 			self_modulate = Color(1, 1, 1, 1);
 			sort_y = false;
 			use_parent_material = false;
 			z_relative = true;
 			index = 0;
+			ysort_children_count = -1;
+			ysort_xform = Transform2D();
+			ysort_pos = Vector2();
 		}
 	};
 
@@ -75,10 +82,10 @@ public:
 
 		_FORCE_INLINE_ bool operator()(const Item *p_left, const Item *p_right) const {
 
-			if (Math::abs(p_left->xform.elements[2].y - p_right->xform.elements[2].y) < CMP_EPSILON)
-				return p_left->xform.elements[2].x < p_right->xform.elements[2].x;
+			if (Math::abs(p_left->ysort_pos.y - p_right->ysort_pos.y) < CMP_EPSILON)
+				return p_left->ysort_pos.x < p_right->ysort_pos.x;
 			else
-				return p_left->xform.elements[2].y < p_right->xform.elements[2].y;
+				return p_left->ysort_pos.y < p_right->ysort_pos.y;
 		}
 	};
 
@@ -119,6 +126,8 @@ public:
 		bool children_order_dirty;
 		Vector<ChildItem> child_items;
 		Color modulate;
+		RID parent;
+		float parent_scale;
 
 		int find_item(Item *p_item) {
 			for (int i = 0; i < child_items.size(); i++) {
@@ -136,12 +145,15 @@ public:
 		Canvas() {
 			modulate = Color(1, 1, 1, 1);
 			children_order_dirty = true;
+			parent_scale = 1.0;
 		}
 	};
 
-	RID_Owner<Canvas> canvas_owner;
+	mutable RID_Owner<Canvas> canvas_owner;
 	RID_Owner<Item> canvas_item_owner;
 	RID_Owner<RasterizerCanvas::Light> canvas_light_owner;
+
+	bool disable_scale;
 
 private:
 	void _render_canvas_item_tree(Item *p_canvas_item, const Transform2D &p_transform, const Rect2 &p_clip_rect, const Color &p_modulate, RasterizerCanvas::Light *p_lights);
@@ -154,6 +166,8 @@ public:
 	RID canvas_create();
 	void canvas_set_item_mirroring(RID p_canvas, RID p_item, const Point2 &p_mirroring);
 	void canvas_set_modulate(RID p_canvas, const Color &p_color);
+	void canvas_set_parent(RID p_canvas, RID p_parent, float p_scale);
+	void canvas_set_disable_scale(bool p_disable);
 
 	RID canvas_item_create();
 	void canvas_item_set_parent(RID p_item, RID p_parent);
@@ -170,25 +184,29 @@ public:
 
 	void canvas_item_set_draw_behind_parent(RID p_item, bool p_enable);
 
+	void canvas_item_set_update_when_visible(RID p_item, bool p_update);
+
 	void canvas_item_add_line(RID p_item, const Point2 &p_from, const Point2 &p_to, const Color &p_color, float p_width = 1.0, bool p_antialiased = false);
 	void canvas_item_add_polyline(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, float p_width = 1.0, bool p_antialiased = false);
+	void canvas_item_add_multiline(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, float p_width = 1.0, bool p_antialiased = false);
 	void canvas_item_add_rect(RID p_item, const Rect2 &p_rect, const Color &p_color);
 	void canvas_item_add_circle(RID p_item, const Point2 &p_pos, float p_radius, const Color &p_color);
 	void canvas_item_add_texture_rect(RID p_item, const Rect2 &p_rect, RID p_texture, bool p_tile = false, const Color &p_modulate = Color(1, 1, 1), bool p_transpose = false, RID p_normal_map = RID());
-	void canvas_item_add_texture_rect_region(RID p_item, const Rect2 &p_rect, RID p_texture, const Rect2 &p_src_rect, const Color &p_modulate = Color(1, 1, 1), bool p_transpose = false, RID p_normal_map = RID(), bool p_clip_uv = true);
+	void canvas_item_add_texture_rect_region(RID p_item, const Rect2 &p_rect, RID p_texture, const Rect2 &p_src_rect, const Color &p_modulate = Color(1, 1, 1), bool p_transpose = false, RID p_normal_map = RID(), bool p_clip_uv = false);
 	void canvas_item_add_nine_patch(RID p_item, const Rect2 &p_rect, const Rect2 &p_source, RID p_texture, const Vector2 &p_topleft, const Vector2 &p_bottomright, VS::NinePatchAxisMode p_x_axis_mode = VS::NINE_PATCH_STRETCH, VS::NinePatchAxisMode p_y_axis_mode = VS::NINE_PATCH_STRETCH, bool p_draw_center = true, const Color &p_modulate = Color(1, 1, 1), RID p_normal_map = RID());
 	void canvas_item_add_primitive(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, const Vector<Point2> &p_uvs, RID p_texture, float p_width = 1.0, RID p_normal_map = RID());
-	void canvas_item_add_polygon(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, const Vector<Point2> &p_uvs = Vector<Point2>(), RID p_texture = RID(), RID p_normal_map = RID());
-	void canvas_item_add_triangle_array(RID p_item, const Vector<int> &p_indices, const Vector<Point2> &p_points, const Vector<Color> &p_colors, const Vector<Point2> &p_uvs = Vector<Point2>(), RID p_texture = RID(), int p_count = -1, RID p_normal_map = RID());
-	void canvas_item_add_mesh(RID p_item, const RID &p_mesh, RID p_skeleton = RID());
-	void canvas_item_add_multimesh(RID p_item, RID p_mesh, RID p_skeleton = RID());
-	void canvas_item_add_particles(RID p_item, RID p_particles, RID p_texture, RID p_normal, int p_h_frames, int p_v_frames);
+	void canvas_item_add_polygon(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, const Vector<Point2> &p_uvs = Vector<Point2>(), RID p_texture = RID(), RID p_normal_map = RID(), bool p_antialiased = false);
+	void canvas_item_add_triangle_array(RID p_item, const Vector<int> &p_indices, const Vector<Point2> &p_points, const Vector<Color> &p_colors, const Vector<Point2> &p_uvs = Vector<Point2>(), const Vector<int> &p_bones = Vector<int>(), const Vector<float> &p_weights = Vector<float>(), RID p_texture = RID(), int p_count = -1, RID p_normal_map = RID());
+	void canvas_item_add_mesh(RID p_item, const RID &p_mesh, const Transform2D &p_transform = Transform2D(), const Color &p_modulate = Color(1, 1, 1), RID p_texture = RID(), RID p_normal_map = RID());
+	void canvas_item_add_multimesh(RID p_item, RID p_mesh, RID p_texture = RID(), RID p_normal_map = RID());
+	void canvas_item_add_particles(RID p_item, RID p_particles, RID p_texture, RID p_normal);
 	void canvas_item_add_set_transform(RID p_item, const Transform2D &p_transform);
 	void canvas_item_add_clip_ignore(RID p_item, bool p_ignore);
 	void canvas_item_set_sort_children_by_y(RID p_item, bool p_enable);
-	void canvas_item_set_z(RID p_item, int p_z);
+	void canvas_item_set_z_index(RID p_item, int p_z);
 	void canvas_item_set_z_as_relative_to_parent(RID p_item, bool p_enable);
 	void canvas_item_set_copy_to_backbuffer(RID p_item, bool p_enable, const Rect2 &p_rect);
+	void canvas_item_attach_skeleton(RID p_item, RID p_skeleton);
 
 	void canvas_item_clear(RID p_item);
 	void canvas_item_set_draw_index(RID p_item, int p_index);

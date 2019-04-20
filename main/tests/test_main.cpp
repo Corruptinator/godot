@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,37 +27,41 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
-#include "list.h"
-#include "os/main_loop.h"
+
+#include "core/list.h"
+#include "core/os/main_loop.h"
 
 #ifdef DEBUG_ENABLED
 
-#include "test_containers.h"
+#include "test_astar.h"
+#include "test_gdscript.h"
 #include "test_gui.h"
 #include "test_math.h"
+#include "test_oa_hash_map.h"
+#include "test_ordered_hash_map.h"
 #include "test_physics.h"
 #include "test_physics_2d.h"
 #include "test_render.h"
-#include "test_sound.h"
-#include "test_string.h"
-
-#include "test_gdscript.h"
-#include "test_image.h"
-#include "test_io.h"
 #include "test_shader_lang.h"
+#include "test_string.h"
 
 const char **tests_get_names() {
 
 	static const char *test_names[] = {
 		"string",
-		"containers",
 		"math",
-		"render",
-		"multimesh",
-		"gui",
-		"io",
-		"shaderlang",
 		"physics",
+		"physics_2d",
+		"render",
+		"oa_hash_map",
+		"gui",
+		"shaderlang",
+		"gd_tokenizer",
+		"gd_parser",
+		"gd_compiler",
+		"gd_bytecode",
+		"ordered_hash_map",
+		"astar",
 		NULL
 	};
 
@@ -69,11 +73,6 @@ MainLoop *test_main(String p_test, const List<String> &p_args) {
 	if (p_test == "string") {
 
 		return TestString::test();
-	}
-
-	if (p_test == "containers") {
-
-		return TestContainers::test();
 	}
 
 	if (p_test == "math") {
@@ -96,22 +95,17 @@ MainLoop *test_main(String p_test, const List<String> &p_args) {
 		return TestRender::test();
 	}
 
+	if (p_test == "oa_hash_map") {
+
+		return TestOAHashMap::test();
+	}
+
 #ifndef _3D_DISABLED
 	if (p_test == "gui") {
 
 		return TestGUI::test();
 	}
 #endif
-
-	//if (p_test=="sound") {
-
-	//	return TestSound::test();
-	//}
-
-	if (p_test == "io") {
-
-		return TestIO::test();
-	}
 
 	if (p_test == "shaderlang") {
 
@@ -138,11 +132,17 @@ MainLoop *test_main(String p_test, const List<String> &p_args) {
 		return TestGDScript::test(TestGDScript::TEST_BYTECODE);
 	}
 
-	if (p_test == "image") {
+	if (p_test == "ordered_hash_map") {
 
-		return TestImage::test();
+		return TestOrderedHashMap::test();
 	}
 
+	if (p_test == "astar") {
+
+		return TestAStar::test();
+	}
+
+	print_line("Unknown test: " + p_test);
 	return NULL;
 }
 

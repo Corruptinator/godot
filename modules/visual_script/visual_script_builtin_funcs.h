@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef VISUAL_SCRIPT_BUILTIN_FUNCS_H
 #define VISUAL_SCRIPT_BUILTIN_FUNCS_H
 
@@ -64,6 +65,8 @@ public:
 		MATH_DECIMALS,
 		MATH_STEPIFY,
 		MATH_LERP,
+		MATH_INVERSE_LERP,
+		MATH_RANGE_LERP,
 		MATH_DECTIME,
 		MATH_RANDOMIZE,
 		MATH_RAND,
@@ -75,6 +78,10 @@ public:
 		MATH_RAD2DEG,
 		MATH_LINEAR2DB,
 		MATH_DB2LINEAR,
+		MATH_POLAR2CARTESIAN,
+		MATH_CARTESIAN2POLAR,
+		MATH_WRAP,
+		MATH_WRAPF,
 		LOGIC_MAX,
 		LOGIC_MIN,
 		LOGIC_CLAMP,
@@ -94,6 +101,7 @@ public:
 		VAR_TO_BYTES,
 		BYTES_TO_VAR,
 		COLORN,
+		MATH_SMOOTHSTEP,
 		FUNC_MAX
 	};
 
@@ -122,7 +130,7 @@ public:
 	virtual PropertyInfo get_output_value_port_info(int p_idx) const;
 
 	virtual String get_caption() const;
-	virtual String get_text() const;
+	//virtual String get_text() const;
 	virtual String get_category() const { return "functions"; }
 
 	void set_func(BuiltinFunc p_which);
@@ -130,6 +138,7 @@ public:
 
 	virtual VisualScriptNodeInstance *instance(VisualScriptInstance *p_instance);
 
+	VisualScriptBuiltinFunc(VisualScriptBuiltinFunc::BuiltinFunc func);
 	VisualScriptBuiltinFunc();
 };
 

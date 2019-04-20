@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,11 +27,12 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef EDITOR_QUICK_OPEN_H
 #define EDITOR_QUICK_OPEN_H
 
+#include "core/pair.h"
 #include "editor_file_system.h"
-#include "pair.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/tree.h"
 class EditorQuickOpen : public ConfirmationDialog {
@@ -49,6 +50,7 @@ class EditorQuickOpen : public ConfirmationDialog {
 
 	void _sbox_input(const Ref<InputEvent> &p_ie);
 	void _parse_fs(EditorFileSystemDirectory *efsd, Vector<Pair<String, Ref<Texture> > > &list);
+	Vector<Pair<String, Ref<Texture> > > _sort_fs(Vector<Pair<String, Ref<Texture> > > &list);
 	float _path_cmp(String search, String path) const;
 
 	void _confirmed();
@@ -64,7 +66,7 @@ public:
 	String get_selected() const;
 	Vector<String> get_selected_files() const;
 
-	void popup(const StringName &p_base, bool p_enable_multi = false, bool p_add_dirs = false, bool p_dontclear = false);
+	void popup_dialog(const StringName &p_base, bool p_enable_multi = false, bool p_add_dirs = false, bool p_dontclear = false);
 	EditorQuickOpen();
 };
 

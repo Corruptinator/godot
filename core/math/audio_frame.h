@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,12 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef AUDIOFRAME_H
 #define AUDIOFRAME_H
 
-#include "typedefs.h"
+#include "core/math/vector2.h"
+#include "core/typedefs.h"
 
 static inline float undenormalise(volatile float f) {
 	union {
@@ -121,6 +123,20 @@ struct AudioFrame {
 		r = p_frame.r;
 	}
 
+	_ALWAYS_INLINE_ AudioFrame operator=(const AudioFrame &p_frame) {
+		l = p_frame.l;
+		r = p_frame.r;
+		return *this;
+	}
+
+	_ALWAYS_INLINE_ operator Vector2() const {
+		return Vector2(l, r);
+	}
+
+	_ALWAYS_INLINE_ AudioFrame(const Vector2 &p_v2) {
+		l = p_v2.x;
+		r = p_v2.y;
+	}
 	_ALWAYS_INLINE_ AudioFrame() {}
 };
 

@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,29 +27,28 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef OS_X11_H
 #define OS_X11_H
 
 #include "context_gl_x11.h"
-#include "drivers/unix/os_unix.h"
-#include "os/input.h"
-#include "servers/visual_server.h"
-//#include "servers/visual/visual_server_wrap_mt.h"
+#include "core/os/input.h"
+#include "crash_handler_x11.h"
 #include "drivers/alsa/audio_driver_alsa.h"
+#include "drivers/alsamidi/midi_driver_alsamidi.h"
 #include "drivers/pulseaudio/audio_driver_pulseaudio.h"
-#include "drivers/rtaudio/audio_driver_rtaudio.h"
+#include "drivers/unix/os_unix.h"
 #include "joypad_linux.h"
 #include "main/input_default.h"
 #include "power_x11.h"
-#include "servers/audio/audio_driver_dummy.h"
 #include "servers/audio_server.h"
-#include "servers/physics_2d/physics_2d_server_sw.h"
-#include "servers/physics_2d/physics_2d_server_wrap_mt.h"
-#include "servers/physics_server.h"
 #include "servers/visual/rasterizer.h"
+#include "servers/visual_server.h"
+//#include "servers/visual/visual_server_wrap_mt.h"
 
 #include <X11/Xcursor/Xcursor.h>
 #include <X11/Xlib.h>
+#include <X11/extensions/XInput2.h>
 #include <X11/extensions/Xrandr.h>
 #include <X11/keysym.h>
 
@@ -95,7 +94,7 @@ class OS_X11 : public OS_Unix {
 
 	int xdnd_version;
 
-#if defined(OPENGL_ENABLED) || defined(LEGACYGL_ENABLED)
+#if defined(OPENGL_ENABLED)
 	ContextGL_X11 *context_gl;
 #endif
 	//Rasterizer *rasterizer;
@@ -116,16 +115,36 @@ class OS_X11 : public OS_Unix {
 	static void xim_destroy_callback(::XIM im, ::XPointer client_data,
 			::XPointer call_data);
 
-	Point2i last_mouse_pos;
+	// IME
+	bool im_active;
+	Vector2 im_position;
+
+	Point2 last_mouse_pos;
 	bool last_mouse_pos_valid;
 	Point2i last_click_pos;
 	uint64_t last_click_ms;
+	int last_click_button_index;
 	uint32_t last_button_state;
 
-	PhysicsServer *physics_server;
-	unsigned int get_mouse_button_state(unsigned int p_x11_state);
+	struct {
+		int opcode;
+		Vector<int> touch_devices;
+		Map<int, Vector2> absolute_devices;
+		XIEventMask all_event_mask;
+		XIEventMask all_master_event_mask;
+		Map<int, Vector2> state;
+		Vector2 mouse_pos_to_filter;
+		Vector2 relative_motion;
+		Vector2 raw_pos;
+		Vector2 old_raw_pos;
+		::Time last_relative_time;
+	} xi;
+
+	bool refresh_device_info();
+
+	unsigned int get_mouse_button_state(unsigned int p_x11_button, int p_x11_type);
 	void get_key_modifier_state(unsigned int p_x11_state, Ref<InputEventWithModifiers> state);
-	Physics2DServer *physics_2d_server;
+	void flush_mouse_motion();
 
 	MouseMode mouse_mode;
 	Point2i center;
@@ -133,7 +152,6 @@ class OS_X11 : public OS_Unix {
 	void handle_key_event(XKeyEvent *p_event, bool p_echo = false);
 	void process_xevents();
 	virtual void delete_main_loop();
-	IP_Unix *ip_unix;
 
 	bool force_quit;
 	bool minimized;
@@ -153,28 +171,29 @@ class OS_X11 : public OS_Unix {
 	JoypadLinux *joypad;
 #endif
 
-#ifdef RTAUDIO_ENABLED
-	AudioDriverRtAudio driver_rtaudio;
-#endif
-
 #ifdef ALSA_ENABLED
 	AudioDriverALSA driver_alsa;
+#endif
+
+#ifdef ALSAMIDI_ENABLED
+	MIDIDriverALSAMidi driver_alsamidi;
 #endif
 
 #ifdef PULSEAUDIO_ENABLED
 	AudioDriverPulseAudio driver_pulseaudio;
 #endif
-	AudioDriverDummy driver_dummy;
-
-	Atom net_wm_icon;
 
 	PowerX11 *power_manager;
 
-	int audio_driver_index;
-	unsigned int capture_idle;
+	bool layered_window;
+
+	CrashHandler crash_handler;
+
+	int video_driver_index;
 	bool maximized;
 	//void set_wm_border(bool p_enabled);
 	void set_wm_fullscreen(bool p_enabled);
+	void set_wm_above(bool p_enabled);
 
 	typedef xrr_monitor_info *(*xrr_get_monitors_t)(Display *dpy, Window window, Bool get_active, int *nmonitors);
 	typedef void (*xrr_free_monitors_t)(xrr_monitor_info *monitors);
@@ -184,27 +203,29 @@ class OS_X11 : public OS_Unix {
 	Bool xrandr_ext_ok;
 
 protected:
-	virtual int get_video_driver_count() const;
-	virtual const char *get_video_driver_name(int p_driver) const;
-	virtual VideoMode get_default_video_mode() const;
+	virtual int get_current_video_driver() const;
 
-	virtual int get_audio_driver_count() const;
-	virtual const char *get_audio_driver_name(int p_driver) const;
-
-	virtual void initialize(const VideoMode &p_desired, int p_video_driver, int p_audio_driver);
+	virtual void initialize_core();
+	virtual Error initialize(const VideoMode &p_desired, int p_video_driver, int p_audio_driver);
 	virtual void finalize();
 
 	virtual void set_main_loop(MainLoop *p_main_loop);
+
+	void _window_changed(XEvent *event);
+
+	bool is_window_maximize_allowed();
 
 public:
 	virtual String get_name();
 
 	virtual void set_cursor_shape(CursorShape p_shape);
+	virtual CursorShape get_cursor_shape() const;
+	virtual void set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot);
 
 	void set_mouse_mode(MouseMode p_mode);
 	MouseMode get_mouse_mode() const;
 
-	virtual void warp_mouse_pos(const Point2 &p_to);
+	virtual void warp_mouse_position(const Point2 &p_to);
 	virtual Point2 get_mouse_position() const;
 	virtual int get_mouse_button_state() const;
 	virtual void set_window_title(const String &p_title);
@@ -222,6 +243,10 @@ public:
 	virtual void make_rendering_thread();
 	virtual void swap_buffers();
 
+	virtual String get_config_path() const;
+	virtual String get_data_path() const;
+	virtual String get_cache_path() const;
+
 	virtual String get_system_dir(SystemDir p_dir) const;
 
 	virtual Error shell_open(String p_uri);
@@ -233,12 +258,13 @@ public:
 	virtual int get_screen_count() const;
 	virtual int get_current_screen() const;
 	virtual void set_current_screen(int p_screen);
-	virtual Point2 get_screen_position(int p_screen = 0) const;
-	virtual Size2 get_screen_size(int p_screen = 0) const;
-	virtual int get_screen_dpi(int p_screen = 0) const;
+	virtual Point2 get_screen_position(int p_screen = -1) const;
+	virtual Size2 get_screen_size(int p_screen = -1) const;
+	virtual int get_screen_dpi(int p_screen = -1) const;
 	virtual Point2 get_window_position() const;
 	virtual void set_window_position(const Point2 &p_position);
 	virtual Size2 get_window_size() const;
+	virtual Size2 get_real_window_size() const;
 	virtual void set_window_size(const Size2 p_size);
 	virtual void set_window_fullscreen(bool p_enabled);
 	virtual bool is_window_fullscreen() const;
@@ -248,11 +274,20 @@ public:
 	virtual bool is_window_minimized() const;
 	virtual void set_window_maximized(bool p_enabled);
 	virtual bool is_window_maximized() const;
+	virtual void set_window_always_on_top(bool p_enabled);
+	virtual bool is_window_always_on_top() const;
 	virtual void request_attention();
 
-	virtual void set_borderless_window(int p_borderless);
+	virtual void set_borderless_window(bool p_borderless);
 	virtual bool get_borderless_window();
+
+	virtual bool get_window_per_pixel_transparency_enabled() const;
+	virtual void set_window_per_pixel_transparency_enabled(bool p_enabled);
+
+	virtual void set_ime_active(const bool p_active);
 	virtual void set_ime_position(const Point2 &p_pos);
+
+	virtual String get_unique_id() const;
 
 	virtual void move_window_to_foreground();
 	virtual void alert(const String &p_alert, const String &p_title = "ALERT!");
@@ -262,17 +297,26 @@ public:
 
 	virtual void set_context(int p_context);
 
-	virtual void set_use_vsync(bool p_enable);
-	virtual bool is_vsync_enabled() const;
+	virtual void _set_use_vsync(bool p_enable);
+	//virtual bool is_vsync_enabled() const;
 
-	virtual PowerState get_power_state();
+	virtual OS::PowerState get_power_state();
 	virtual int get_power_seconds_left();
 	virtual int get_power_percent_left();
 
 	virtual bool _check_internal_feature_support(const String &p_feature);
 
+	virtual void force_process_input();
 	void run();
 
+	void disable_crash_handler();
+	bool is_disable_crash_handler() const;
+
+	virtual Error move_to_trash(const String &p_path);
+
+	virtual LatinKeyboardVariant get_latin_keyboard_variant() const;
+
+	void update_real_mouse_position();
 	OS_X11();
 };
 

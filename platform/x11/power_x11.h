@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -28,19 +28,19 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
-#ifndef X11_POWER_H_
-#define X11_POWER_H_
+#ifndef POWER_X11_H
+#define POWER_X11_H
 
-#include "os/dir_access.h"
-#include "os/file_access.h"
-#include "os/power.h"
+#include "core/os/dir_access.h"
+#include "core/os/file_access.h"
+#include "core/os/os.h"
 
 class PowerX11 {
 
 private:
 	int nsecs_left;
 	int percent_left;
-	PowerState power_state;
+	OS::PowerState power_state;
 
 	FileAccessRef open_power_file(const char *base, const char *node, const char *key);
 	bool read_power_file(const char *base, const char *node, const char *key, char *buf, size_t buflen);
@@ -58,9 +58,9 @@ public:
 	PowerX11();
 	virtual ~PowerX11();
 
-	PowerState get_power_state();
+	OS::PowerState get_power_state();
 	int get_power_seconds_left();
 	int get_power_percent_left();
 };
 
-#endif /* X11_POWER_H_ */
+#endif // POWER_X11_H

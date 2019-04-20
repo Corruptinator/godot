@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -28,8 +28,14 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
 
+// Must include Winsock before windows.h (included by os_windows.h)
+#include "drivers/unix/net_socket_posix.h"
+
 #include "os_windows.h"
 
+#include "core/io/marshalls.h"
+#include "core/version_generated.gen.h"
+#include "drivers/gles2/rasterizer_gles2.h"
 #include "drivers/gles3/rasterizer_gles3.h"
 #include "drivers/windows/dir_access_windows.h"
 #include "drivers/windows/file_access_windows.h"
@@ -37,18 +43,16 @@
 #include "drivers/windows/rw_lock_windows.h"
 #include "drivers/windows/semaphore_windows.h"
 #include "drivers/windows/thread_windows.h"
-#include "io/marshalls.h"
-#include "joypad.h"
+#include "joypad_windows.h"
 #include "lang_table.h"
 #include "main/main.h"
-#include "packet_peer_udp_winsock.h"
-#include "project_settings.h"
 #include "servers/audio_server.h"
 #include "servers/visual/visual_server_raster.h"
 #include "servers/visual/visual_server_wrap_mt.h"
-#include "stream_peer_winsock.h"
-#include "tcp_server_winsock.h"
+#include "windows_terminal_logger.h"
 
+#include <avrt.h>
+#include <direct.h>
 #include <process.h>
 #include <regstr.h>
 #include <shlobj.h>
@@ -56,18 +60,51 @@
 static const WORD MAX_CONSOLE_LINES = 1500;
 
 extern "C" {
-#ifdef _MSC_VER
-_declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
-#else
-__attribute__((visibility("default"))) DWORD NvOptimusEnablement = 0x00000001;
-#endif
+__declspec(dllexport) DWORD NvOptimusEnablement = 1;
+__declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 }
 
-#ifndef WM_MOUSEHWHEEL
-#define WM_MOUSEHWHEEL 0x020e
+// Workaround mingw-w64 < 4.0 bug
+#ifndef WM_TOUCH
+#define WM_TOUCH 576
 #endif
 
-//#define STDOUT_FILE
+typedef struct {
+	int count;
+	int screen;
+	Size2 size;
+} EnumSizeData;
+
+typedef struct {
+	int count;
+	int screen;
+	Point2 pos;
+} EnumPosData;
+
+static BOOL CALLBACK _MonitorEnumProcSize(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
+
+	EnumSizeData *data = (EnumSizeData *)dwData;
+	if (data->count == data->screen) {
+		data->size.x = lprcMonitor->right - lprcMonitor->left;
+		data->size.y = lprcMonitor->bottom - lprcMonitor->top;
+	}
+
+	data->count++;
+	return TRUE;
+}
+
+static String format_error_message(DWORD id) {
+
+	LPWSTR messageBuffer = NULL;
+	size_t size = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+			NULL, id, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPWSTR)&messageBuffer, 0, NULL);
+
+	String msg = "Error " + itos(id) + ": " + String(messageBuffer, size);
+
+	LocalFree(messageBuffer);
+
+	return msg;
+}
 
 extern HINSTANCE godot_hinstance;
 
@@ -138,32 +175,28 @@ void RedirectIOToConsole() {
 	// point to console as well
 }
 
-int OS_Windows::get_video_driver_count() const {
+BOOL WINAPI HandlerRoutine(_In_ DWORD dwCtrlType) {
+	if (ScriptDebugger::get_singleton() == NULL)
+		return FALSE;
 
-	return 1;
+	switch (dwCtrlType) {
+		case CTRL_C_EVENT:
+			ScriptDebugger::get_singleton()->set_depth(-1);
+			ScriptDebugger::get_singleton()->set_lines_left(1);
+			return TRUE;
+		default:
+			return FALSE;
+	}
 }
-const char *OS_Windows::get_video_driver_name(int p_driver) const {
 
-	return "GLES2";
-}
+void OS_Windows::initialize_debugging() {
 
-OS::VideoMode OS_Windows::get_default_video_mode() const {
-
-	return VideoMode(1024, 600, false);
-}
-
-int OS_Windows::get_audio_driver_count() const {
-
-	return AudioDriverManager::get_driver_count();
-}
-const char *OS_Windows::get_audio_driver_name(int p_driver) const {
-
-	AudioDriver *driver = AudioDriverManager::get_driver(p_driver);
-	ERR_FAIL_COND_V(!driver, "");
-	return AudioDriverManager::get_driver(p_driver)->get_name();
+	SetConsoleCtrlHandler(HandlerRoutine, TRUE);
 }
 
 void OS_Windows::initialize_core() {
+
+	crash_handler.initialize();
 
 	last_button_state = 0;
 
@@ -185,9 +218,7 @@ void OS_Windows::initialize_core() {
 	DirAccess::make_default<DirAccessWindows>(DirAccess::ACCESS_USERDATA);
 	DirAccess::make_default<DirAccessWindows>(DirAccess::ACCESS_FILESYSTEM);
 
-	TCPServerWinsock::make_default();
-	StreamPeerWinsock::make_default();
-	PacketPeerUDPWinsock::make_default();
+	NetSocketPosix::make_default();
 
 	// We need to know how often the clock is updated
 	if (!QueryPerformanceFrequency((LARGE_INTEGER *)&ticks_per_second))
@@ -196,6 +227,10 @@ void OS_Windows::initialize_core() {
 	// the start of the computer when we call GetGameTime()
 	ticks_start = 0;
 	ticks_start = get_ticks_usec();
+
+	// set minimum resolution for periodic timers, otherwise Sleep(n) may wait at least as
+	//  long as the windows scheduler resolution (~16-30ms) even for calls like Sleep(1)
+	timeBeginPeriod(1);
 
 	process_map = memnew((Map<ProcessID, ProcessInfo>));
 
@@ -211,9 +246,23 @@ bool OS_Windows::can_draw() const {
 
 #define MI_WP_SIGNATURE 0xFF515700
 #define SIGNATURE_MASK 0xFFFFFF00
+// Keeping the name suggested by Microsoft, but this macro really answers:
+// Is this mouse event emulated from touch or pen input?
 #define IsPenEvent(dw) (((dw)&SIGNATURE_MASK) == MI_WP_SIGNATURE)
+// This one tells whether the event comes from touchscreen (and not from pen)
+#define IsTouchEvent(dw) (IsPenEvent(dw) && ((dw)&0x80))
 
-void OS_Windows::_touch_event(bool p_pressed, int p_x, int p_y, int idx) {
+void OS_Windows::_touch_event(bool p_pressed, float p_x, float p_y, int idx) {
+
+	// Defensive
+	if (touch_state.has(idx) == p_pressed)
+		return;
+
+	if (p_pressed) {
+		touch_state.insert(idx, Vector2(p_x, p_y));
+	} else {
+		touch_state.erase(idx);
+	}
 
 	Ref<InputEventScreenTouch> event;
 	event.instance();
@@ -222,11 +271,21 @@ void OS_Windows::_touch_event(bool p_pressed, int p_x, int p_y, int idx) {
 	event->set_position(Vector2(p_x, p_y));
 
 	if (main_loop) {
-		input->parse_input_event(event);
+		input->accumulate_input_event(event);
 	}
 };
 
-void OS_Windows::_drag_event(int p_x, int p_y, int idx) {
+void OS_Windows::_drag_event(float p_x, float p_y, int idx) {
+
+	Map<int, Vector2>::Element *curr = touch_state.find(idx);
+	// Defensive
+	if (!curr)
+		return;
+
+	if (curr->get() == Vector2(p_x, p_y))
+		return;
+
+	curr->get() = Vector2(p_x, p_y);
 
 	Ref<InputEventScreenDrag> event;
 	event.instance();
@@ -234,28 +293,43 @@ void OS_Windows::_drag_event(int p_x, int p_y, int idx) {
 	event->set_position(Vector2(p_x, p_y));
 
 	if (main_loop)
-		input->parse_input_event(event);
+		input->accumulate_input_event(event);
 };
 
 LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+
+	if (drop_events) {
+
+		if (user_proc) {
+
+			return CallWindowProcW(user_proc, hWnd, uMsg, wParam, lParam);
+		} else {
+			return DefWindowProcW(hWnd, uMsg, wParam, lParam);
+		}
+	};
 
 	switch (uMsg) // Check For Windows Messages
 	{
 		case WM_SETFOCUS: {
 			window_has_focus = true;
-			// Re-capture cursor if we're in one of the capture modes
-			if (mouse_mode == MOUSE_MODE_CAPTURED || mouse_mode == MOUSE_MODE_CONFINED) {
-				SetCapture(hWnd);
-			}
+
+			// Restore mouse mode
+			_set_mouse_mode_impl(mouse_mode);
+
 			break;
 		}
 		case WM_KILLFOCUS: {
 			window_has_focus = false;
 
-			// Release capture if we're in one of the capture modes
-			if (mouse_mode == MOUSE_MODE_CAPTURED || mouse_mode == MOUSE_MODE_CONFINED) {
-				ReleaseCapture();
+			// Release capture unconditionally because it can be set due to dragging, in addition to captured mode
+			ReleaseCapture();
+
+			// Release every touch to avoid sticky points
+			for (Map<int, Vector2>::Element *E = touch_state.front(); E; E = E->next()) {
+				_touch_event(false, E->get().x, E->get().y, E->key());
 			}
+			touch_state.clear();
+
 			break;
 		}
 		case WM_ACTIVATE: // Watch For Window Activate Message
@@ -270,15 +344,7 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 				alt_mem = false;
 				control_mem = false;
 				shift_mem = false;
-				if (mouse_mode == MOUSE_MODE_CAPTURED || mouse_mode == MOUSE_MODE_CONFINED) {
-					RECT clipRect;
-					GetClientRect(hWnd, &clipRect);
-					ClientToScreen(hWnd, (POINT *)&clipRect.left);
-					ClientToScreen(hWnd, (POINT *)&clipRect.right);
-					ClipCursor(&clipRect);
-					SetCapture(hWnd);
-				}
-			} else {
+			} else { // WM_INACTIVE
 				main_loop->notification(MainLoop::NOTIFICATION_WM_FOCUS_OUT);
 				alt_mem = false;
 			};
@@ -318,19 +384,100 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 			outside = true;
 			if (main_loop && mouse_mode != MOUSE_MODE_CAPTURED)
 				main_loop->notification(MainLoop::NOTIFICATION_WM_MOUSE_EXIT);
-			if (input)
-				input->set_mouse_in_window(false);
 
 		} break;
+		case WM_INPUT: {
+			if (mouse_mode != MOUSE_MODE_CAPTURED || !use_raw_input) {
+				break;
+			}
+
+			UINT dwSize;
+
+			GetRawInputData((HRAWINPUT)lParam, RID_INPUT, NULL, &dwSize, sizeof(RAWINPUTHEADER));
+			LPBYTE lpb = new BYTE[dwSize];
+			if (lpb == NULL) {
+				return 0;
+			}
+
+			if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, lpb, &dwSize, sizeof(RAWINPUTHEADER)) != dwSize)
+				OutputDebugString(TEXT("GetRawInputData does not return correct size !\n"));
+
+			RAWINPUT *raw = (RAWINPUT *)lpb;
+
+			if (raw->header.dwType == RIM_TYPEMOUSE) {
+				Ref<InputEventMouseMotion> mm;
+				mm.instance();
+
+				mm->set_control(control_mem);
+				mm->set_shift(shift_mem);
+				mm->set_alt(alt_mem);
+
+				mm->set_button_mask(last_button_state);
+
+				Point2i c(video_mode.width / 2, video_mode.height / 2);
+
+				// centering just so it works as before
+				POINT pos = { (int)c.x, (int)c.y };
+				ClientToScreen(hWnd, &pos);
+				SetCursorPos(pos.x, pos.y);
+
+				mm->set_position(c);
+				mm->set_global_position(c);
+				input->set_mouse_position(c);
+				mm->set_speed(Vector2(0, 0));
+
+				if (raw->data.mouse.usFlags == MOUSE_MOVE_RELATIVE) {
+					mm->set_relative(Vector2(raw->data.mouse.lLastX, raw->data.mouse.lLastY));
+
+				} else if (raw->data.mouse.usFlags == MOUSE_MOVE_ABSOLUTE) {
+
+					int nScreenWidth = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+					int nScreenHeight = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+					int nScreenLeft = GetSystemMetrics(SM_XVIRTUALSCREEN);
+					int nScreenTop = GetSystemMetrics(SM_YVIRTUALSCREEN);
+
+					Vector2 abs_pos(
+							(double(raw->data.mouse.lLastX) - 65536.0 / (nScreenWidth)) * nScreenWidth / 65536.0 + nScreenLeft,
+							(double(raw->data.mouse.lLastY) - 65536.0 / (nScreenHeight)) * nScreenHeight / 65536.0 + nScreenTop);
+
+					POINT coords; //client coords
+					coords.x = abs_pos.x;
+					coords.y = abs_pos.y;
+
+					ScreenToClient(hWnd, &coords);
+
+					mm->set_relative(Vector2(coords.x - old_x, coords.y - old_y));
+					old_x = coords.x;
+					old_y = coords.y;
+
+					/*Input.mi.dx = (int)((((double)(pos.x)-nScreenLeft) * 65536) / nScreenWidth + 65536 / (nScreenWidth));
+					Input.mi.dy = (int)((((double)(pos.y)-nScreenTop) * 65536) / nScreenHeight + 65536 / (nScreenHeight));
+					*/
+				}
+
+				if (window_has_focus && main_loop && mm->get_relative() != Vector2())
+					input->accumulate_input_event(mm);
+			}
+			delete[] lpb;
+		} break;
 		case WM_MOUSEMOVE: {
+			if (mouse_mode == MOUSE_MODE_CAPTURED && use_raw_input) {
+				break;
+			}
+
+			if (input->is_emulating_mouse_from_touch()) {
+				// Universal translation enabled; ignore OS translation
+				LPARAM extra = GetMessageExtraInfo();
+				if (IsTouchEvent(extra)) {
+					break;
+				}
+			}
 
 			if (outside) {
 				//mouse enter
 
 				if (main_loop && mouse_mode != MOUSE_MODE_CAPTURED)
 					main_loop->notification(MainLoop::NOTIFICATION_WM_MOUSE_ENTER);
-				if (input)
-					input->set_mouse_in_window(true);
 
 				CursorShape c = cursor_shape;
 				cursor_shape = CURSOR_MAX;
@@ -349,18 +496,6 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 			// Don't calculate relative mouse movement if we don't have focus in CAPTURED mode.
 			if (!window_has_focus && mouse_mode == MOUSE_MODE_CAPTURED)
 				break;
-			/*
-			LPARAM extra = GetMessageExtraInfo();
-			if (IsPenEvent(extra)) {
-
-				int idx = extra & 0x7f;
-				_drag_event(idx, uMsg, wParam, lParam);
-				if (idx != 0) {
-					return 0;
-				};
-				// fallthrough for mouse event
-			};
-			*/
 
 			Ref<InputEventMouseMotion> mm;
 			mm.instance();
@@ -369,16 +504,10 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 			mm->set_shift((wParam & MK_SHIFT) != 0);
 			mm->set_alt(alt_mem);
 
-			int bmask = 0;
-			bmask |= (wParam & MK_LBUTTON) ? (1 << 0) : 0;
-			bmask |= (wParam & MK_RBUTTON) ? (1 << 1) : 0;
-			bmask |= (wParam & MK_MBUTTON) ? (1 << 2) : 0;
-			mm->set_button_mask(bmask);
+			mm->set_button_mask(last_button_state);
 
-			last_button_state = mm->get_button_mask();
-			/*mm->get_button_mask()|=(wParam&MK_XBUTTON1)?(1<<5):0;
-			mm->get_button_mask()|=(wParam&MK_XBUTTON2)?(1<<6):0;*/
 			mm->set_position(Vector2(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)));
+			mm->set_global_position(Vector2(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)));
 
 			if (mouse_mode == MOUSE_MODE_CAPTURED) {
 
@@ -412,11 +541,18 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 			old_x = mm->get_position().x;
 			old_y = mm->get_position().y;
 			if (window_has_focus && main_loop)
-				input->parse_input_event(mm);
+				input->accumulate_input_event(mm);
 
 		} break;
 		case WM_LBUTTONDOWN:
 		case WM_LBUTTONUP:
+			if (input->is_emulating_mouse_from_touch()) {
+				// Universal translation enabled; ignore OS translations for left button
+				LPARAM extra = GetMessageExtraInfo();
+				if (IsTouchEvent(extra)) {
+					break;
+				}
+			}
 		case WM_MBUTTONDOWN:
 		case WM_MBUTTONUP:
 		case WM_RBUTTONDOWN:
@@ -424,168 +560,226 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		case WM_MOUSEWHEEL:
 		case WM_MOUSEHWHEEL:
 		case WM_LBUTTONDBLCLK:
+		case WM_MBUTTONDBLCLK:
 		case WM_RBUTTONDBLCLK:
-			/*case WM_XBUTTONDOWN:
-		case WM_XBUTTONUP: */ {
+		case WM_XBUTTONDBLCLK:
+		case WM_XBUTTONDOWN:
+		case WM_XBUTTONUP: {
 
-				/*
-			LPARAM extra = GetMessageExtraInfo();
-			if (IsPenEvent(extra)) {
+			Ref<InputEventMouseButton> mb;
+			mb.instance();
 
-				int idx = extra & 0x7f;
-				_touch_event(idx, uMsg, wParam, lParam);
-				if (idx != 0) {
-					return 0;
-				};
-				// fallthrough for mouse event
-			};
-			*/
-
-				Ref<InputEventMouseButton> mb;
-				mb.instance();
-
-				switch (uMsg) {
-					case WM_LBUTTONDOWN: {
-						mb->set_pressed(true);
-						mb->set_button_index(1);
-					} break;
-					case WM_LBUTTONUP: {
-						mb->set_pressed(false);
-						mb->set_button_index(1);
-					} break;
-					case WM_MBUTTONDOWN: {
-						mb->set_pressed(true);
-						mb->set_button_index(3);
-
-					} break;
-					case WM_MBUTTONUP: {
-						mb->set_pressed(false);
-						mb->set_button_index(3);
-					} break;
-					case WM_RBUTTONDOWN: {
-						mb->set_pressed(true);
-						mb->set_button_index(2);
-					} break;
-					case WM_RBUTTONUP: {
-						mb->set_pressed(false);
-						mb->set_button_index(2);
-					} break;
-					case WM_LBUTTONDBLCLK: {
-
-						mb->set_pressed(true);
-						mb->set_button_index(1);
-						mb->set_doubleclick(true);
-					} break;
-					case WM_RBUTTONDBLCLK: {
-
-						mb->set_pressed(true);
-						mb->set_button_index(2);
-						mb->set_doubleclick(true);
-					} break;
-					case WM_MOUSEWHEEL: {
-
-						mb->set_pressed(true);
-						int motion = (short)HIWORD(wParam);
-						if (!motion)
-							return 0;
-
-						if (motion > 0)
-							mb->set_button_index(BUTTON_WHEEL_UP);
-						else
-							mb->set_button_index(BUTTON_WHEEL_DOWN);
-
-					} break;
-					case WM_MOUSEHWHEEL: {
-
-						mb->set_pressed(true);
-						int motion = (short)HIWORD(wParam);
-						if (!motion)
-							return 0;
-
-						if (motion < 0) {
-							mb->set_button_index(BUTTON_WHEEL_LEFT);
-							mb->set_factor(fabs((double)motion / (double)WHEEL_DELTA));
-						} else {
-							mb->set_button_index(BUTTON_WHEEL_RIGHT);
-							mb->set_factor(fabs((double)motion / (double)WHEEL_DELTA));
-						}
-					} break;
-					/*
-				case WM_XBUTTONDOWN: {
-					mb->is_pressed()=true;
-					mb->get_button_index()=(HIWORD(wParam)==XBUTTON1)?6:7;
+			switch (uMsg) {
+				case WM_LBUTTONDOWN: {
+					mb->set_pressed(true);
+					mb->set_button_index(1);
 				} break;
-				case WM_XBUTTONUP:
-					mb->is_pressed()=true;
-					mb->get_button_index()=(HIWORD(wParam)==XBUTTON1)?6:7;
-				} break;*/
-					default: { return 0; }
-				}
+				case WM_LBUTTONUP: {
+					mb->set_pressed(false);
+					mb->set_button_index(1);
+				} break;
+				case WM_MBUTTONDOWN: {
+					mb->set_pressed(true);
+					mb->set_button_index(3);
 
-				mb->set_control((wParam & MK_CONTROL) != 0);
-				mb->set_shift((wParam & MK_SHIFT) != 0);
-				mb->set_alt(alt_mem);
-				//mb->get_alt()=(wParam&MK_MENU)!=0;
-				int bmask = 0;
-				bmask |= (wParam & MK_LBUTTON) ? (1 << 0) : 0;
-				bmask |= (wParam & MK_RBUTTON) ? (1 << 1) : 0;
-				bmask |= (wParam & MK_MBUTTON) ? (1 << 2) : 0;
-				mb->set_button_mask(bmask);
+				} break;
+				case WM_MBUTTONUP: {
+					mb->set_pressed(false);
+					mb->set_button_index(3);
+				} break;
+				case WM_RBUTTONDOWN: {
+					mb->set_pressed(true);
+					mb->set_button_index(2);
+				} break;
+				case WM_RBUTTONUP: {
+					mb->set_pressed(false);
+					mb->set_button_index(2);
+				} break;
+				case WM_LBUTTONDBLCLK: {
 
-				last_button_state = mb->get_button_mask();
-				/*
-			mb->get_button_mask()|=(wParam&MK_XBUTTON1)?(1<<5):0;
-			mb->get_button_mask()|=(wParam&MK_XBUTTON2)?(1<<6):0;*/
-				mb->set_position(Vector2(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)));
+					mb->set_pressed(true);
+					mb->set_button_index(1);
+					mb->set_doubleclick(true);
+				} break;
+				case WM_RBUTTONDBLCLK: {
 
-				if (mouse_mode == MOUSE_MODE_CAPTURED) {
+					mb->set_pressed(true);
+					mb->set_button_index(2);
+					mb->set_doubleclick(true);
+				} break;
+				case WM_MBUTTONDBLCLK: {
 
-					mb->set_position(Vector2(old_x, old_y));
-				}
+					mb->set_pressed(true);
+					mb->set_button_index(3);
+					mb->set_doubleclick(true);
+				} break;
+				case WM_MOUSEWHEEL: {
 
-				if (uMsg != WM_MOUSEWHEEL) {
-					if (mb->is_pressed()) {
+					mb->set_pressed(true);
+					int motion = (short)HIWORD(wParam);
+					if (!motion)
+						return 0;
 
-						if (++pressrc > 0)
-							SetCapture(hWnd);
+					if (motion > 0)
+						mb->set_button_index(BUTTON_WHEEL_UP);
+					else
+						mb->set_button_index(BUTTON_WHEEL_DOWN);
+
+				} break;
+				case WM_MOUSEHWHEEL: {
+
+					mb->set_pressed(true);
+					int motion = (short)HIWORD(wParam);
+					if (!motion)
+						return 0;
+
+					if (motion < 0) {
+						mb->set_button_index(BUTTON_WHEEL_LEFT);
+						mb->set_factor(fabs((double)motion / (double)WHEEL_DELTA));
 					} else {
-
-						if (--pressrc <= 0) {
-							ReleaseCapture();
-							pressrc = 0;
-						}
+						mb->set_button_index(BUTTON_WHEEL_RIGHT);
+						mb->set_factor(fabs((double)motion / (double)WHEEL_DELTA));
 					}
-				} else if (mouse_mode != MOUSE_MODE_CAPTURED) {
-					// for reasons unknown to mankind, wheel comes in screen cordinates
-					POINT coords;
-					coords.x = mb->get_position().x;
-					coords.y = mb->get_position().y;
+				} break;
+				case WM_XBUTTONDOWN: {
 
-					ScreenToClient(hWnd, &coords);
+					mb->set_pressed(true);
+					if (HIWORD(wParam) == XBUTTON1)
+						mb->set_button_index(BUTTON_XBUTTON1);
+					else
+						mb->set_button_index(BUTTON_XBUTTON2);
+				} break;
+				case WM_XBUTTONUP: {
 
-					mb->set_position(Vector2(coords.x, coords.y));
-				}
+					mb->set_pressed(false);
+					if (HIWORD(wParam) == XBUTTON1)
+						mb->set_button_index(BUTTON_XBUTTON1);
+					else
+						mb->set_button_index(BUTTON_XBUTTON2);
+				} break;
+				case WM_XBUTTONDBLCLK: {
 
-				mb->set_global_position(mb->get_position());
-
-				if (main_loop) {
-					input->parse_input_event(mb);
-					if (mb->is_pressed() && mb->get_button_index() > 3) {
-						//send release for mouse wheel
-						Ref<InputEventMouseButton> mbd = mb->duplicate();
-						mbd->set_pressed(false);
-						input->parse_input_event(mbd);
-					}
+					mb->set_pressed(true);
+					if (HIWORD(wParam) == XBUTTON1)
+						mb->set_button_index(BUTTON_XBUTTON1);
+					else
+						mb->set_button_index(BUTTON_XBUTTON2);
+					mb->set_doubleclick(true);
+				} break;
+				default: {
+					return 0;
 				}
 			}
-			break;
+
+			mb->set_control((wParam & MK_CONTROL) != 0);
+			mb->set_shift((wParam & MK_SHIFT) != 0);
+			mb->set_alt(alt_mem);
+			//mb->get_alt()=(wParam&MK_MENU)!=0;
+			if (mb->is_pressed())
+				last_button_state |= (1 << (mb->get_button_index() - 1));
+			else
+				last_button_state &= ~(1 << (mb->get_button_index() - 1));
+			mb->set_button_mask(last_button_state);
+
+			mb->set_position(Vector2(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)));
+
+			if (mouse_mode == MOUSE_MODE_CAPTURED && !use_raw_input) {
+
+				mb->set_position(Vector2(old_x, old_y));
+			}
+
+			if (uMsg != WM_MOUSEWHEEL && uMsg != WM_MOUSEHWHEEL) {
+				if (mb->is_pressed()) {
+
+					if (++pressrc > 0 && mouse_mode != MOUSE_MODE_CAPTURED)
+						SetCapture(hWnd);
+				} else {
+
+					if (--pressrc <= 0) {
+						if (mouse_mode != MOUSE_MODE_CAPTURED) {
+							ReleaseCapture();
+						}
+						pressrc = 0;
+					}
+				}
+			} else if (mouse_mode != MOUSE_MODE_CAPTURED) {
+				// for reasons unknown to mankind, wheel comes in screen cordinates
+				POINT coords;
+				coords.x = mb->get_position().x;
+				coords.y = mb->get_position().y;
+
+				ScreenToClient(hWnd, &coords);
+
+				mb->set_position(Vector2(coords.x, coords.y));
+			}
+
+			mb->set_global_position(mb->get_position());
+
+			if (main_loop) {
+				input->accumulate_input_event(mb);
+				if (mb->is_pressed() && mb->get_button_index() > 3 && mb->get_button_index() < 8) {
+					//send release for mouse wheel
+					Ref<InputEventMouseButton> mbd = mb->duplicate();
+					last_button_state &= ~(1 << (mbd->get_button_index() - 1));
+					mbd->set_button_mask(last_button_state);
+					mbd->set_pressed(false);
+					input->accumulate_input_event(mbd);
+				}
+			}
+		} break;
+
+		case WM_MOVE: {
+			if (!IsIconic(hWnd)) {
+				int x = LOWORD(lParam);
+				int y = HIWORD(lParam);
+				last_pos = Point2(x, y);
+			}
+		} break;
 
 		case WM_SIZE: {
-			int window_w = LOWORD(lParam);
-			int window_h = HIWORD(lParam);
-			if (window_w > 0 && window_h > 0) {
-				video_mode.width = window_w;
-				video_mode.height = window_h;
+			// Ignore size when a SIZE_MINIMIZED event is triggered
+			if (wParam != SIZE_MINIMIZED) {
+				int window_w = LOWORD(lParam);
+				int window_h = HIWORD(lParam);
+				if (window_w > 0 && window_h > 0 && !preserve_window_size) {
+					video_mode.width = window_w;
+					video_mode.height = window_h;
+				} else {
+					preserve_window_size = false;
+					set_window_size(Size2(video_mode.width, video_mode.height));
+				}
+			}
+
+			if (wParam == SIZE_MAXIMIZED) {
+				maximized = true;
+				minimized = false;
+			} else if (wParam == SIZE_MINIMIZED) {
+				maximized = false;
+				minimized = true;
+			} else if (wParam == SIZE_RESTORED) {
+				maximized = false;
+				minimized = false;
+			}
+			if (is_layered_allowed() && layered_window) {
+				DeleteObject(hBitmap);
+
+				RECT r;
+				GetWindowRect(hWnd, &r);
+				dib_size = Size2i(r.right - r.left, r.bottom - r.top);
+
+				BITMAPINFO bmi;
+				ZeroMemory(&bmi, sizeof(BITMAPINFO));
+				bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+				bmi.bmiHeader.biWidth = dib_size.x;
+				bmi.bmiHeader.biHeight = dib_size.y;
+				bmi.bmiHeader.biPlanes = 1;
+				bmi.bmiHeader.biBitCount = 32;
+				bmi.bmiHeader.biCompression = BI_RGB;
+				bmi.bmiHeader.biSizeImage = dib_size.x * dib_size.y * 4;
+				hBitmap = CreateDIBSection(hDC_dib, &bmi, DIB_RGB_COLORS, (void **)&dib_data, NULL, 0x0);
+				SelectObject(hDC_dib, hBitmap);
+
+				ZeroMemory(dib_data, dib_size.x * dib_size.y * 4);
 			}
 			//return 0;								// Jump Back
 		} break;
@@ -599,7 +793,9 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		case WM_TIMER: {
 			if (wParam == move_timer_id) {
 				process_key_events();
-				Main::iteration();
+				if (!Main::is_iterating()) {
+					Main::iteration();
+				}
 			}
 		} break;
 
@@ -618,6 +814,13 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 					gr_mem = alt_mem;
 			}
 
+			if (mouse_mode == MOUSE_MODE_CAPTURED) {
+				// When SetCapture is used, ALT+F4 hotkey is ignored by Windows, so handle it ourselves
+				if (wParam == VK_F4 && alt_mem && (uMsg == WM_KEYDOWN || uMsg == WM_SYSKEYDOWN)) {
+					if (main_loop)
+						main_loop->notification(MainLoop::NOTIFICATION_WM_QUIT_REQUEST);
+				}
+			}
 			/*
 			if (wParam==VK_WIN) TODO wtf is this?
 				meta_mem=uMsg==WM_KEYDOWN;
@@ -641,14 +844,6 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 			if (ke.uMsg == WM_SYSKEYUP)
 				ke.uMsg = WM_KEYUP;
 
-			/*if (ke.uMsg==WM_KEYDOWN && alt_mem && uMsg!=WM_SYSKEYDOWN) {
-				//altgr hack for intl keyboards, not sure how good it is
-				//windows is weeeeird
-				ke.mod_state.alt=false;
-				ke.mod_state.control=false;
-				print_line("")
-			}*/
-
 			ke.wParam = wParam;
 			ke.lParam = lParam;
 			key_event_buffer[key_event_pos++] = ke;
@@ -656,10 +851,9 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		} break;
 		case WM_INPUTLANGCHANGEREQUEST: {
 
-			print_line("input lang change");
+			// FIXME: Do something?
 		} break;
 
-#if WINVER >= 0x0601 // for windows 7
 		case WM_TOUCH: {
 
 			BOOL bHandled = FALSE;
@@ -669,13 +863,18 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 				if (GetTouchInputInfo((HTOUCHINPUT)lParam, cInputs, pInputs, sizeof(TOUCHINPUT))) {
 					for (UINT i = 0; i < cInputs; i++) {
 						TOUCHINPUT ti = pInputs[i];
+						POINT touch_pos = {
+							TOUCH_COORD_TO_PIXEL(ti.x),
+							TOUCH_COORD_TO_PIXEL(ti.y),
+						};
+						ScreenToClient(hWnd, &touch_pos);
 						//do something with each touch input entry
 						if (ti.dwFlags & TOUCHEVENTF_MOVE) {
 
-							_drag_event(ti.x / 100, ti.y / 100, ti.dwID);
+							_drag_event(touch_pos.x, touch_pos.y, ti.dwID);
 						} else if (ti.dwFlags & (TOUCHEVENTF_UP | TOUCHEVENTF_DOWN)) {
 
-							_touch_event(ti.dwFlags & TOUCHEVENTF_DOWN != 0, ti.x / 100, ti.y / 100, ti.dwID);
+							_touch_event(ti.dwFlags & TOUCHEVENTF_DOWN, touch_pos.x, touch_pos.y, ti.dwID);
 						};
 					}
 					bHandled = TRUE;
@@ -693,7 +892,6 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
 		} break;
 
-#endif
 		case WM_DEVICECHANGE: {
 
 			joypad->probe_joypads();
@@ -708,7 +906,9 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 						SetCursor(NULL);
 				} else {
 					if (hCursor != NULL) {
-						SetCursor(hCursor);
+						CursorShape c = cursor_shape;
+						cursor_shape = CURSOR_MAX;
+						set_cursor_shape(c);
 						hCursor = NULL;
 					}
 				}
@@ -717,8 +917,7 @@ LRESULT OS_Windows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		} break;
 		case WM_DROPFILES: {
 
-			HDROP hDropInfo = NULL;
-			hDropInfo = (HDROP)wParam;
+			HDROP hDropInfo = (HDROP)wParam;
 			const int buffsize = 4096;
 			wchar_t buf[buffsize];
 
@@ -787,7 +986,7 @@ void OS_Windows::process_key_events() {
 					if (k->get_unicode() < 32)
 						k->set_unicode(0);
 
-					input->parse_input_event(k);
+					input->accumulate_input_event(k);
 				}
 
 				//do nothing
@@ -825,7 +1024,7 @@ void OS_Windows::process_key_events() {
 
 				k->set_echo((ke.uMsg == WM_KEYDOWN && (ke.lParam & (1 << 30))));
 
-				input->parse_input_event(k);
+				input->accumulate_input_event(k);
 
 			} break;
 		}
@@ -862,7 +1061,6 @@ static int QueryDpiForMonitor(HMONITOR hmon, _MonitorDpiType dpiType = MDT_Defau
 
 	UINT x = 0, y = 0;
 	HRESULT hr = E_FAIL;
-	bool bSet = false;
 	if (hmon && (Shcore != (HMODULE)INVALID_HANDLE_VALUE)) {
 		hr = getDPIForMonitor(hmon, dpiType /*MDT_Effective_DPI*/, &x, &y);
 		if (SUCCEEDED(hr) && (x > 0) && (y > 0)) {
@@ -889,12 +1087,36 @@ static int QueryDpiForMonitor(HMONITOR hmon, _MonitorDpiType dpiType = MDT_Defau
 	return (dpiX + dpiY) / 2;
 }
 
-void OS_Windows::initialize(const VideoMode &p_desired, int p_video_driver, int p_audio_driver) {
+typedef enum _SHC_PROCESS_DPI_AWARENESS {
+	SHC_PROCESS_DPI_UNAWARE = 0,
+	SHC_PROCESS_SYSTEM_DPI_AWARE = 1,
+	SHC_PROCESS_PER_MONITOR_DPI_AWARE = 2
+} SHC_PROCESS_DPI_AWARENESS;
+
+int OS_Windows::get_current_video_driver() const {
+	return video_driver_index;
+}
+
+Error OS_Windows::initialize(const VideoMode &p_desired, int p_video_driver, int p_audio_driver) {
 
 	main_loop = NULL;
 	outside = true;
 	window_has_focus = true;
 	WNDCLASSEXW wc;
+
+	if (is_hidpi_allowed()) {
+		HMODULE Shcore = LoadLibraryW(L"Shcore.dll");
+
+		if (Shcore != NULL) {
+			typedef HRESULT(WINAPI * SetProcessDpiAwareness_t)(SHC_PROCESS_DPI_AWARENESS);
+
+			SetProcessDpiAwareness_t SetProcessDpiAwareness = (SetProcessDpiAwareness_t)GetProcAddress(Shcore, "SetProcessDpiAwareness");
+
+			if (SetProcessDpiAwareness) {
+				SetProcessDpiAwareness(SHC_PROCESS_SYSTEM_DPI_AWARE);
+			}
+		}
+	}
 
 	video_mode = p_desired;
 	//printf("**************** desired %s, mode %s\n", p_desired.fullscreen?"true":"false", video_mode.fullscreen?"true":"false");
@@ -921,18 +1143,41 @@ void OS_Windows::initialize(const VideoMode &p_desired, int p_video_driver, int 
 
 	if (!RegisterClassExW(&wc)) {
 		MessageBox(NULL, "Failed To Register The Window Class.", "ERROR", MB_OK | MB_ICONEXCLAMATION);
-		return; // Return
+		return ERR_UNAVAILABLE;
+	}
+
+	use_raw_input = true;
+
+	RAWINPUTDEVICE Rid[1];
+
+	Rid[0].usUsagePage = 0x01;
+	Rid[0].usUsage = 0x02;
+	Rid[0].dwFlags = 0;
+	Rid[0].hwndTarget = 0;
+
+	if (RegisterRawInputDevices(Rid, 1, sizeof(Rid[0])) == FALSE) {
+		//registration failed.
+		use_raw_input = false;
 	}
 
 	pre_fs_valid = true;
 	if (video_mode.fullscreen) {
 
+		/* this returns DPI unaware size, commenting
 		DEVMODE current;
 		memset(&current, 0, sizeof(current));
 		EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS, &current);
 
 		WindowRect.right = current.dmPelsWidth;
 		WindowRect.bottom = current.dmPelsHeight;
+
+		*/
+
+		EnumSizeData data = { 0, 0, Size2() };
+		EnumDisplayMonitors(NULL, NULL, _MonitorEnumProcSize, (LPARAM)&data);
+
+		WindowRect.right = data.size.width;
+		WindowRect.bottom = data.size.height;
 
 		/*  DEVMODE dmScreenSettings;
 		memset(&dmScreenSettings,0,sizeof(dmScreenSettings));
@@ -969,7 +1214,14 @@ void OS_Windows::initialize(const VideoMode &p_desired, int p_video_driver, int 
 
 	AdjustWindowRectEx(&WindowRect, dwStyle, FALSE, dwExStyle);
 
-	char *windowid = getenv("GODOT_WINDOWID");
+	char *windowid;
+#ifdef MINGW_ENABLED
+	windowid = getenv("GODOT_WINDOWID");
+#else
+	size_t len;
+	_dupenv_s(&windowid, &len, "GODOT_WINDOWID");
+#endif
+
 	if (windowid) {
 
 // strtoull on mingw
@@ -978,6 +1230,7 @@ void OS_Windows::initialize(const VideoMode &p_desired, int p_video_driver, int 
 #else
 		hWnd = (HWND)_strtoui64(windowid, NULL, 0);
 #endif
+		free(windowid);
 		SetLastError(0);
 		user_proc = (WNDPROC)GetWindowLongPtr(hWnd, GWLP_WNDPROC);
 		SetWindowLongPtr(hWnd, GWLP_WNDPROC, (LONG_PTR)(WNDPROC)::WndProc);
@@ -986,65 +1239,115 @@ void OS_Windows::initialize(const VideoMode &p_desired, int p_video_driver, int 
 
 			printf("Error setting WNDPROC: %li\n", le);
 		};
-		LONG_PTR proc = GetWindowLongPtr(hWnd, GWLP_WNDPROC);
+		GetWindowLongPtr(hWnd, GWLP_WNDPROC);
 
 		RECT rect;
 		if (!GetClientRect(hWnd, &rect)) {
 			MessageBoxW(NULL, L"Window Creation Error.", L"ERROR", MB_OK | MB_ICONEXCLAMATION);
-			return; // Return FALSE
+			return ERR_UNAVAILABLE;
 		};
 		video_mode.width = rect.right;
 		video_mode.height = rect.bottom;
 		video_mode.fullscreen = false;
 	} else {
 
-		if (!(hWnd = CreateWindowExW(dwExStyle, L"Engine", L"", dwStyle | WS_CLIPSIBLINGS | WS_CLIPCHILDREN, (GetSystemMetrics(SM_CXSCREEN) - WindowRect.right) / 2, (GetSystemMetrics(SM_CYSCREEN) - WindowRect.bottom) / 2, WindowRect.right - WindowRect.left, WindowRect.bottom - WindowRect.top, NULL, NULL, hInstance, NULL))) {
+		hWnd = CreateWindowExW(
+				dwExStyle,
+				L"Engine", L"",
+				dwStyle | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
+				(GetSystemMetrics(SM_CXSCREEN) - WindowRect.right) / 2,
+				(GetSystemMetrics(SM_CYSCREEN) - WindowRect.bottom) / 2,
+				WindowRect.right - WindowRect.left,
+				WindowRect.bottom - WindowRect.top,
+				NULL, NULL, hInstance, NULL);
+		if (!hWnd) {
 			MessageBoxW(NULL, L"Window Creation Error.", L"ERROR", MB_OK | MB_ICONEXCLAMATION);
-			return; // Return FALSE
+			return ERR_UNAVAILABLE;
 		}
 	};
 
+	if (video_mode.always_on_top) {
+		SetWindowPos(hWnd, video_mode.always_on_top ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+	}
+
 #if defined(OPENGL_ENABLED)
-	gl_context = memnew(ContextGL_Win(hWnd, true));
-	gl_context->initialize();
 
-	RasterizerGLES3::register_config();
+	bool gles3_context = true;
+	if (p_video_driver == VIDEO_DRIVER_GLES2) {
+		gles3_context = false;
+	}
 
-	RasterizerGLES3::make_current();
+	bool editor = Engine::get_singleton()->is_editor_hint();
+	bool gl_initialization_error = false;
+
+	gl_context = NULL;
+	while (!gl_context) {
+		gl_context = memnew(ContextGL_Windows(hWnd, gles3_context));
+
+		if (gl_context->initialize() != OK) {
+			memdelete(gl_context);
+			gl_context = NULL;
+
+			if (GLOBAL_GET("rendering/quality/driver/fallback_to_gles2") || editor) {
+				if (p_video_driver == VIDEO_DRIVER_GLES2) {
+					gl_initialization_error = true;
+					break;
+				}
+
+				p_video_driver = VIDEO_DRIVER_GLES2;
+				gles3_context = false;
+			} else {
+				gl_initialization_error = true;
+				break;
+			}
+		}
+	}
+
+	while (true) {
+		if (gles3_context) {
+			if (RasterizerGLES3::is_viable() == OK) {
+				RasterizerGLES3::register_config();
+				RasterizerGLES3::make_current();
+				break;
+			} else {
+				if (GLOBAL_GET("rendering/quality/driver/fallback_to_gles2") || editor) {
+					p_video_driver = VIDEO_DRIVER_GLES2;
+					gles3_context = false;
+					continue;
+				} else {
+					gl_initialization_error = true;
+					break;
+				}
+			}
+		} else {
+			if (RasterizerGLES2::is_viable() == OK) {
+				RasterizerGLES2::register_config();
+				RasterizerGLES2::make_current();
+				break;
+			} else {
+				gl_initialization_error = true;
+				break;
+			}
+		}
+	}
+
+	if (gl_initialization_error) {
+		OS::get_singleton()->alert("Your video card driver does not support any of the supported OpenGL versions.\n"
+								   "Please update your drivers or if you have a very old or integrated GPU upgrade it.",
+				"Unable to initialize Video driver");
+		return ERR_UNAVAILABLE;
+	}
+
+	video_driver_index = p_video_driver;
+
+	gl_context->set_use_vsync(video_mode.use_vsync);
 #endif
 
 	visual_server = memnew(VisualServerRaster);
 	if (get_render_thread_mode() != RENDER_THREAD_UNSAFE) {
-
 		visual_server = memnew(VisualServerWrapMT(visual_server, get_render_thread_mode() == RENDER_SEPARATE_THREAD));
 	}
 
-	physics_server = memnew(PhysicsServerSW);
-	physics_server->init();
-
-	physics_2d_server = Physics2DServerWrapMT::init_server<Physics2DServerSW>();
-	physics_2d_server->init();
-
-	if (!is_no_window_mode_enabled()) {
-		ShowWindow(hWnd, SW_SHOW); // Show The Window
-		SetForegroundWindow(hWnd); // Slightly Higher Priority
-		SetFocus(hWnd); // Sets Keyboard Focus To
-	}
-
-	/*
-		DEVMODE dmScreenSettings;					// Device Mode
-		memset(&dmScreenSettings,0,sizeof(dmScreenSettings));		// Makes Sure Memory's Cleared
-		dmScreenSettings.dmSize=sizeof(dmScreenSettings);		// Size Of The Devmode Structure
-		dmScreenSettings.dmPelsWidth	= width;			// Selected Screen Width
-		dmScreenSettings.dmPelsHeight	= height;			// Selected Screen Height
-		dmScreenSettings.dmBitsPerPel	= bits;				// Selected Bits Per Pixel
-		dmScreenSettings.dmFields=DM_BITSPERPEL|DM_PELSWIDTH|DM_PELSHEIGHT;
-		if (ChangeDisplaySettings(&dmScreenSettings,CDS_FULLSCREEN)!=DISP_CHANGE_SUCCESSFUL)
-
-
-
-
-  */
 	visual_server->init();
 
 	input = memnew(InputDefault);
@@ -1052,12 +1355,7 @@ void OS_Windows::initialize(const VideoMode &p_desired, int p_video_driver, int 
 
 	power_manager = memnew(PowerWindows);
 
-	AudioDriverManager::get_driver(p_audio_driver)->set_singleton();
-
-	if (AudioDriverManager::get_driver(p_audio_driver)->init() != OK) {
-
-		ERR_PRINT("Initializing audio failed.");
-	}
+	AudioDriverManager::initialize(p_audio_driver);
 
 	TRACKMOUSEEVENT tme;
 	tme.cbSize = sizeof(TRACKMOUSEEVENT);
@@ -1066,13 +1364,48 @@ void OS_Windows::initialize(const VideoMode &p_desired, int p_video_driver, int 
 	tme.dwHoverTime = HOVER_DEFAULT;
 	TrackMouseEvent(&tme);
 
-	//RegisterTouchWindow(hWnd, 0); // Windows 7
+	RegisterTouchWindow(hWnd, 0);
 
-	_ensure_data_dir();
+	_ensure_user_data_dir();
 
 	DragAcceptFiles(hWnd, true);
 
 	move_timer_id = 1;
+
+	if (!is_no_window_mode_enabled()) {
+		ShowWindow(hWnd, SW_SHOW); // Show The Window
+		SetForegroundWindow(hWnd); // Slightly Higher Priority
+		SetFocus(hWnd); // Sets Keyboard Focus To
+	}
+
+	if (p_desired.layered_splash) {
+		set_window_per_pixel_transparency_enabled(true);
+	}
+
+	// IME
+	im_himc = ImmGetContext(hWnd);
+	ImmReleaseContext(hWnd, im_himc);
+
+	im_position = Vector2();
+
+	set_ime_active(false);
+
+	if (!OS::get_singleton()->is_in_low_processor_usage_mode()) {
+		//SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
+		SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
+		DWORD index = 0;
+		HANDLE handle = AvSetMmThreadCharacteristics("Games", &index);
+		if (handle)
+			AvSetMmThreadPriority(handle, AVRT_PRIORITY_CRITICAL);
+
+		// This is needed to make sure that background work does not starve the main thread.
+		// This is only setting priority of this thread, not the whole process.
+		SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+	}
+
+	update_real_mouse_position();
+
+	return OK;
 }
 
 void OS_Windows::set_clipboard(const String &p_text) {
@@ -1167,6 +1500,10 @@ void OS_Windows::set_main_loop(MainLoop *p_main_loop) {
 
 void OS_Windows::finalize() {
 
+#ifdef WINMIDI_ENABLED
+	driver_midi.close();
+#endif
+
 	if (main_loop)
 		memdelete(main_loop);
 
@@ -1174,6 +1511,7 @@ void OS_Windows::finalize() {
 
 	memdelete(joypad);
 	memdelete(input);
+	touch_state.clear();
 
 	visual_server->finish();
 	memdelete(visual_server);
@@ -1185,59 +1523,15 @@ void OS_Windows::finalize() {
 	if (user_proc) {
 		SetWindowLongPtr(hWnd, GWLP_WNDPROC, (LONG_PTR)user_proc);
 	};
-
-	/*
-	if (debugger_connection_console) {
-		memdelete(debugger_connection_console);
-	}
-	*/
-
-	physics_server->finish();
-	memdelete(physics_server);
-
-	physics_2d_server->finish();
-	memdelete(physics_2d_server);
 }
 
 void OS_Windows::finalize_core() {
 
+	timeEndPeriod(1);
+
 	memdelete(process_map);
-
-	TCPServerWinsock::cleanup();
-	StreamPeerWinsock::cleanup();
+	NetSocketPosix::cleanup();
 }
-
-void OS_Windows::vprint(const char *p_format, va_list p_list, bool p_stderr) {
-
-	const unsigned int BUFFER_SIZE = 16384;
-	char buf[BUFFER_SIZE + 1]; // +1 for the terminating character
-	int len = vsnprintf(buf, BUFFER_SIZE, p_format, p_list);
-	if (len <= 0)
-		return;
-	if (len >= BUFFER_SIZE)
-		len = BUFFER_SIZE; // Output is too big, will be truncated
-	buf[len] = 0;
-
-	int wlen = MultiByteToWideChar(CP_UTF8, 0, buf, len, NULL, 0);
-	if (wlen < 0)
-		return;
-
-	wchar_t *wbuf = (wchar_t *)malloc((len + 1) * sizeof(wchar_t));
-	MultiByteToWideChar(CP_UTF8, 0, buf, len, wbuf, wlen);
-	wbuf[wlen] = 0;
-
-	if (p_stderr)
-		fwprintf(stderr, L"%ls", wbuf);
-	else
-		wprintf(L"%ls", wbuf);
-
-#ifdef STDOUT_FILE
-//vwfprintf(stdo,p_format,p_list);
-#endif
-	free(wbuf);
-
-	fflush(stdout);
-};
 
 void OS_Windows::alert(const String &p_alert, const String &p_title) {
 
@@ -1251,18 +1545,27 @@ void OS_Windows::set_mouse_mode(MouseMode p_mode) {
 
 	if (mouse_mode == p_mode)
 		return;
+
+	_set_mouse_mode_impl(p_mode);
+
 	mouse_mode = p_mode;
-	if (mouse_mode == MOUSE_MODE_CAPTURED || mouse_mode == MOUSE_MODE_CONFINED) {
+}
+
+void OS_Windows::_set_mouse_mode_impl(MouseMode p_mode) {
+
+	if (p_mode == MOUSE_MODE_CAPTURED || p_mode == MOUSE_MODE_CONFINED) {
 		RECT clipRect;
 		GetClientRect(hWnd, &clipRect);
 		ClientToScreen(hWnd, (POINT *)&clipRect.left);
 		ClientToScreen(hWnd, (POINT *)&clipRect.right);
 		ClipCursor(&clipRect);
-		center = Point2i(video_mode.width / 2, video_mode.height / 2);
-		POINT pos = { (int)center.x, (int)center.y };
-		ClientToScreen(hWnd, &pos);
-		if (mouse_mode == MOUSE_MODE_CAPTURED)
+		if (p_mode == MOUSE_MODE_CAPTURED) {
+			center = Point2i(video_mode.width / 2, video_mode.height / 2);
+			POINT pos = { (int)center.x, (int)center.y };
+			ClientToScreen(hWnd, &pos);
 			SetCursorPos(pos.x, pos.y);
+			SetCapture(hWnd);
+		}
 	} else {
 		ReleaseCapture();
 		ClipCursor(NULL);
@@ -1271,16 +1574,17 @@ void OS_Windows::set_mouse_mode(MouseMode p_mode) {
 	if (p_mode == MOUSE_MODE_CAPTURED || p_mode == MOUSE_MODE_HIDDEN) {
 		hCursor = SetCursor(NULL);
 	} else {
-		SetCursor(hCursor);
+		CursorShape c = cursor_shape;
+		cursor_shape = CURSOR_MAX;
+		set_cursor_shape(c);
 	}
 }
-
 OS_Windows::MouseMode OS_Windows::get_mouse_mode() const {
 
 	return mouse_mode;
 }
 
-void OS_Windows::warp_mouse_pos(const Point2 &p_to) {
+void OS_Windows::warp_mouse_position(const Point2 &p_to) {
 
 	if (mouse_mode == MOUSE_MODE_CAPTURED) {
 
@@ -1300,6 +1604,19 @@ void OS_Windows::warp_mouse_pos(const Point2 &p_to) {
 Point2 OS_Windows::get_mouse_position() const {
 
 	return Point2(old_x, old_y);
+}
+
+void OS_Windows::update_real_mouse_position() {
+
+	POINT mouse_pos;
+	if (GetCursorPos(&mouse_pos) && ScreenToClient(hWnd, &mouse_pos)) {
+		if (mouse_pos.x > 0 && mouse_pos.y > 0 && mouse_pos.x <= video_mode.width && mouse_pos.y <= video_mode.height) {
+			old_x = mouse_pos.x;
+			old_y = mouse_pos.y;
+			old_invalid = false;
+			input->set_mouse_position(Point2i(mouse_pos.x, mouse_pos.y));
+		}
+	}
 }
 
 int OS_Windows::get_mouse_button_state() const {
@@ -1366,12 +1683,6 @@ void OS_Windows::set_current_screen(int p_screen) {
 	set_window_position(ofs + get_screen_position(p_screen));
 }
 
-typedef struct {
-	int count;
-	int screen;
-	Point2 pos;
-} EnumPosData;
-
 static BOOL CALLBACK _MonitorEnumProcPos(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
 
 	EnumPosData *data = (EnumPosData *)dwData;
@@ -1386,32 +1697,14 @@ static BOOL CALLBACK _MonitorEnumProcPos(HMONITOR hMonitor, HDC hdcMonitor, LPRE
 
 Point2 OS_Windows::get_screen_position(int p_screen) const {
 
-	EnumPosData data = { 0, p_screen, Point2() };
+	EnumPosData data = { 0, p_screen == -1 ? get_current_screen() : p_screen, Point2() };
 	EnumDisplayMonitors(NULL, NULL, _MonitorEnumProcPos, (LPARAM)&data);
 	return data.pos;
 }
 
-typedef struct {
-	int count;
-	int screen;
-	Size2 size;
-} EnumSizeData;
-
-static BOOL CALLBACK _MonitorEnumProcSize(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
-
-	EnumSizeData *data = (EnumSizeData *)dwData;
-	if (data->count == data->screen) {
-		data->size.x = lprcMonitor->right - lprcMonitor->left;
-		data->size.y = lprcMonitor->bottom - lprcMonitor->top;
-	}
-
-	data->count++;
-	return TRUE;
-}
-
 Size2 OS_Windows::get_screen_size(int p_screen) const {
 
-	EnumSizeData data = { 0, p_screen, Size2() };
+	EnumSizeData data = { 0, p_screen == -1 ? get_current_screen() : p_screen, Size2() };
 	EnumDisplayMonitors(NULL, NULL, _MonitorEnumProcSize, (LPARAM)&data);
 	return data.size;
 }
@@ -1435,12 +1728,16 @@ static BOOL CALLBACK _MonitorEnumProcDpi(HMONITOR hMonitor, HDC hdcMonitor, LPRE
 
 int OS_Windows::get_screen_dpi(int p_screen) const {
 
-	EnumDpiData data = { 0, p_screen, 72 };
+	EnumDpiData data = { 0, p_screen == -1 ? get_current_screen() : p_screen, 72 };
 	EnumDisplayMonitors(NULL, NULL, _MonitorEnumProcDpi, (LPARAM)&data);
 	return data.dpi;
 }
 
 Point2 OS_Windows::get_window_position() const {
+
+	if (minimized) {
+		return last_pos;
+	}
 
 	RECT r;
 	GetWindowRect(hWnd, &r);
@@ -1453,29 +1750,55 @@ void OS_Windows::set_window_position(const Point2 &p_position) {
 	RECT r;
 	GetWindowRect(hWnd, &r);
 	MoveWindow(hWnd, p_position.x, p_position.y, r.right - r.left, r.bottom - r.top, TRUE);
+
+	// Don't let the mouse leave the window when moved
+	if (mouse_mode == MOUSE_MODE_CONFINED) {
+		RECT rect;
+		GetClientRect(hWnd, &rect);
+		ClientToScreen(hWnd, (POINT *)&rect.left);
+		ClientToScreen(hWnd, (POINT *)&rect.right);
+		ClipCursor(&rect);
+	}
+
+	last_pos = p_position;
+	update_real_mouse_position();
 }
 Size2 OS_Windows::get_window_size() const {
 
+	if (minimized) {
+		return Size2(video_mode.width, video_mode.height);
+	}
+
 	RECT r;
-	GetClientRect(hWnd, &r);
-	return Vector2(r.right - r.left, r.bottom - r.top);
+	if (GetClientRect(hWnd, &r)) { // Only area inside of window border
+		return Size2(r.right - r.left, r.bottom - r.top);
+	}
+	return Size2();
+}
+Size2 OS_Windows::get_real_window_size() const {
+
+	RECT r;
+	if (GetWindowRect(hWnd, &r)) { // Includes area of the window border
+		return Size2(r.right - r.left, r.bottom - r.top);
+	}
+	return Size2();
 }
 void OS_Windows::set_window_size(const Size2 p_size) {
 
-	video_mode.width = p_size.width;
-	video_mode.height = p_size.height;
+	int w = p_size.width;
+	int h = p_size.height;
+
+	video_mode.width = w;
+	video_mode.height = h;
 
 	if (video_mode.fullscreen) {
 		return;
 	}
 
-	int w = p_size.width;
-	int h = p_size.height;
-
 	RECT rect;
 	GetWindowRect(hWnd, &rect);
 
-	if (video_mode.borderless_window == false) {
+	if (!video_mode.borderless_window) {
 		RECT crect;
 		GetClientRect(hWnd, &crect);
 
@@ -1484,19 +1807,28 @@ void OS_Windows::set_window_size(const Size2 p_size) {
 	}
 
 	MoveWindow(hWnd, rect.left, rect.top, w, h, TRUE);
+
+	// Don't let the mouse leave the window when resizing to a smaller resolution
+	if (mouse_mode == MOUSE_MODE_CONFINED) {
+		RECT rect;
+		GetClientRect(hWnd, &rect);
+		ClientToScreen(hWnd, (POINT *)&rect.left);
+		ClientToScreen(hWnd, (POINT *)&rect.right);
+		ClipCursor(&rect);
+	}
 }
 void OS_Windows::set_window_fullscreen(bool p_enabled) {
 
 	if (video_mode.fullscreen == p_enabled)
 		return;
 
+	if (layered_window)
+		set_window_per_pixel_transparency_enabled(false);
+
 	if (p_enabled) {
 
 		if (pre_fs_valid) {
 			GetWindowRect(hWnd, &pre_fs_rect);
-			//print_line("A: "+itos(pre_fs_rect.left)+","+itos(pre_fs_rect.top)+","+itos(pre_fs_rect.right-pre_fs_rect.left)+","+itos(pre_fs_rect.bottom-pre_fs_rect.top));
-			//MapWindowPoints(hWnd, GetParent(hWnd), (LPPOINT) &pre_fs_rect, 2);
-			//print_line("B: "+itos(pre_fs_rect.left)+","+itos(pre_fs_rect.top)+","+itos(pre_fs_rect.right-pre_fs_rect.left)+","+itos(pre_fs_rect.bottom-pre_fs_rect.top));
 		}
 
 		int cs = get_current_screen();
@@ -1581,12 +1913,113 @@ bool OS_Windows::is_window_maximized() const {
 	return maximized;
 }
 
-void OS_Windows::set_borderless_window(int p_borderless) {
+void OS_Windows::set_window_always_on_top(bool p_enabled) {
+	if (video_mode.always_on_top == p_enabled)
+		return;
+
+	video_mode.always_on_top = p_enabled;
+
+	_update_window_style();
+}
+
+bool OS_Windows::is_window_always_on_top() const {
+	return video_mode.always_on_top;
+}
+
+bool OS_Windows::get_window_per_pixel_transparency_enabled() const {
+
+	if (!is_layered_allowed()) return false;
+	return layered_window;
+}
+
+void OS_Windows::set_window_per_pixel_transparency_enabled(bool p_enabled) {
+
+	if (!is_layered_allowed()) return;
+	if (layered_window != p_enabled) {
+		if (p_enabled) {
+			set_borderless_window(true);
+			//enable per-pixel alpha
+			hDC_dib = CreateCompatibleDC(GetDC(hWnd));
+
+			SetWindowLong(hWnd, GWL_EXSTYLE, GetWindowLong(hWnd, GWL_EXSTYLE) | WS_EX_LAYERED);
+
+			RECT r;
+			GetWindowRect(hWnd, &r);
+			dib_size = Size2(r.right - r.left, r.bottom - r.top);
+
+			BITMAPINFO bmi;
+			ZeroMemory(&bmi, sizeof(BITMAPINFO));
+			bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+			bmi.bmiHeader.biWidth = dib_size.x;
+			bmi.bmiHeader.biHeight = dib_size.y;
+			bmi.bmiHeader.biPlanes = 1;
+			bmi.bmiHeader.biBitCount = 32;
+			bmi.bmiHeader.biCompression = BI_RGB;
+			bmi.bmiHeader.biSizeImage = dib_size.x * dib_size.y * 4;
+			hBitmap = CreateDIBSection(hDC_dib, &bmi, DIB_RGB_COLORS, (void **)&dib_data, NULL, 0x0);
+			SelectObject(hDC_dib, hBitmap);
+
+			ZeroMemory(dib_data, dib_size.x * dib_size.y * 4);
+
+			layered_window = true;
+		} else {
+			//disable per-pixel alpha
+			layered_window = false;
+
+			SetWindowLong(hWnd, GWL_EXSTYLE, GetWindowLong(hWnd, GWL_EXSTYLE) & ~WS_EX_LAYERED);
+
+			//cleanup
+			DeleteObject(hBitmap);
+			DeleteDC(hDC_dib);
+		}
+	}
+}
+
+uint8_t *OS_Windows::get_layered_buffer_data() {
+
+	return (is_layered_allowed() && layered_window) ? dib_data : NULL;
+}
+
+Size2 OS_Windows::get_layered_buffer_size() {
+
+	return (is_layered_allowed() && layered_window) ? dib_size : Size2();
+}
+
+void OS_Windows::swap_layered_buffer() {
+
+	if (is_layered_allowed() && layered_window) {
+
+		//premultiply alpha
+		for (int y = 0; y < dib_size.y; y++) {
+			for (int x = 0; x < dib_size.x; x++) {
+				float alpha = (float)dib_data[y * (int)dib_size.x * 4 + x * 4 + 3] / (float)0xFF;
+				dib_data[y * (int)dib_size.x * 4 + x * 4 + 0] *= alpha;
+				dib_data[y * (int)dib_size.x * 4 + x * 4 + 1] *= alpha;
+				dib_data[y * (int)dib_size.x * 4 + x * 4 + 2] *= alpha;
+			}
+		}
+		//swap layered window buffer
+		POINT ptSrc = { 0, 0 };
+		SIZE sizeWnd = { (long)dib_size.x, (long)dib_size.y };
+		BLENDFUNCTION bf;
+		bf.BlendOp = AC_SRC_OVER;
+		bf.BlendFlags = 0;
+		bf.AlphaFormat = AC_SRC_ALPHA;
+		bf.SourceConstantAlpha = 0xFF;
+		UpdateLayeredWindow(hWnd, NULL, NULL, &sizeWnd, hDC_dib, &ptSrc, 0, &bf, ULW_ALPHA);
+	}
+}
+
+void OS_Windows::set_borderless_window(bool p_borderless) {
 	if (video_mode.borderless_window == p_borderless)
 		return;
 
+	if (!p_borderless && layered_window)
+		set_window_per_pixel_transparency_enabled(false);
+
 	video_mode.borderless_window = p_borderless;
 
+	preserve_window_size = true;
 	_update_window_style();
 }
 
@@ -1605,6 +2038,8 @@ void OS_Windows::_update_window_style(bool repaint) {
 		}
 	}
 
+	SetWindowPos(hWnd, video_mode.always_on_top ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE);
+
 	if (repaint) {
 		RECT rect;
 		GetWindowRect(hWnd, &rect);
@@ -1612,10 +2047,36 @@ void OS_Windows::_update_window_style(bool repaint) {
 	}
 }
 
-Error OS_Windows::open_dynamic_library(const String p_path, void *&p_library_handle) {
-	p_library_handle = (void *)LoadLibrary(p_path.utf8().get_data());
+Error OS_Windows::open_dynamic_library(const String p_path, void *&p_library_handle, bool p_also_set_library_path) {
+
+	String path = p_path;
+
+	if (!FileAccess::exists(path)) {
+		//this code exists so gdnative can load .dll files from within the executable path
+		path = get_executable_path().get_base_dir().plus_file(p_path.get_file());
+	}
+
+	typedef DLL_DIRECTORY_COOKIE(WINAPI * PAddDllDirectory)(PCWSTR);
+	typedef BOOL(WINAPI * PRemoveDllDirectory)(DLL_DIRECTORY_COOKIE);
+
+	PAddDllDirectory add_dll_directory = (PAddDllDirectory)GetProcAddress(GetModuleHandle("kernel32.dll"), "AddDllDirectory");
+	PRemoveDllDirectory remove_dll_directory = (PRemoveDllDirectory)GetProcAddress(GetModuleHandle("kernel32.dll"), "RemoveDllDirectory");
+
+	bool has_dll_directory_api = ((add_dll_directory != NULL) && (remove_dll_directory != NULL));
+	DLL_DIRECTORY_COOKIE cookie = NULL;
+
+	if (p_also_set_library_path && has_dll_directory_api) {
+		cookie = add_dll_directory(path.get_base_dir().c_str());
+	}
+
+	p_library_handle = (void *)LoadLibraryExW(path.c_str(), NULL, (p_also_set_library_path && has_dll_directory_api) ? LOAD_LIBRARY_SEARCH_DEFAULT_DIRS : 0);
+
+	if (cookie) {
+		remove_dll_directory(cookie);
+	}
+
 	if (!p_library_handle) {
-		ERR_EXPLAIN("Can't open dynamic library: " + p_path + ". Error: " + String::num(GetLastError()));
+		ERR_EXPLAIN("Can't open dynamic library: " + p_path + ". Error: " + format_error_message(GetLastError()));
 		ERR_FAIL_V(ERR_CANT_OPEN);
 	}
 	return OK;
@@ -1629,7 +2090,6 @@ Error OS_Windows::close_dynamic_library(void *p_library_handle) {
 }
 
 Error OS_Windows::get_dynamic_library_symbol_handle(void *p_library_handle, const String p_name, void *&p_symbol_handle, bool p_optional) {
-	char *error;
 	p_symbol_handle = (void *)GetProcAddress((HMODULE)p_library_handle, p_name.utf8().get_data());
 	if (!p_symbol_handle) {
 		if (!p_optional) {
@@ -1651,107 +2111,6 @@ void OS_Windows::request_attention() {
 	info.dwTimeout = 0;
 	info.uCount = 2;
 	FlashWindowEx(&info);
-}
-
-void OS_Windows::print_error(const char *p_function, const char *p_file, int p_line, const char *p_code, const char *p_rationale, ErrorType p_type) {
-
-	HANDLE hCon = GetStdHandle(STD_OUTPUT_HANDLE);
-	if (!hCon || hCon == INVALID_HANDLE_VALUE) {
-
-		const char *err_details;
-		if (p_rationale && p_rationale[0])
-			err_details = p_rationale;
-		else
-			err_details = p_code;
-
-		switch (p_type) {
-			case ERR_ERROR:
-				print("ERROR: %s: %s\n", p_function, err_details);
-				print("   At: %s:%i\n", p_file, p_line);
-				break;
-			case ERR_WARNING:
-				print("WARNING: %s: %s\n", p_function, err_details);
-				print("     At: %s:%i\n", p_file, p_line);
-				break;
-			case ERR_SCRIPT:
-				print("SCRIPT ERROR: %s: %s\n", p_function, err_details);
-				print("          At: %s:%i\n", p_file, p_line);
-				break;
-			case ERR_SHADER:
-				print("SHADER ERROR: %s: %s\n", p_function, err_details);
-				print("          At: %s:%i\n", p_file, p_line);
-				break;
-		}
-
-	} else {
-
-		CONSOLE_SCREEN_BUFFER_INFO sbi; //original
-		GetConsoleScreenBufferInfo(hCon, &sbi);
-
-		WORD current_fg = sbi.wAttributes & (FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY);
-		WORD current_bg = sbi.wAttributes & (BACKGROUND_RED | BACKGROUND_GREEN | BACKGROUND_BLUE | BACKGROUND_INTENSITY);
-
-		uint32_t basecol = 0;
-		switch (p_type) {
-			case ERR_ERROR: basecol = FOREGROUND_RED; break;
-			case ERR_WARNING: basecol = FOREGROUND_RED | FOREGROUND_GREEN; break;
-			case ERR_SCRIPT: basecol = FOREGROUND_RED | FOREGROUND_BLUE; break;
-			case ERR_SHADER: basecol = FOREGROUND_GREEN | FOREGROUND_BLUE; break;
-		}
-
-		basecol |= current_bg;
-
-		if (p_rationale && p_rationale[0]) {
-
-			SetConsoleTextAttribute(hCon, basecol | FOREGROUND_INTENSITY);
-			switch (p_type) {
-				case ERR_ERROR: print("ERROR: "); break;
-				case ERR_WARNING: print("WARNING: "); break;
-				case ERR_SCRIPT: print("SCRIPT ERROR: "); break;
-				case ERR_SHADER: print("SHADER ERROR: "); break;
-			}
-
-			SetConsoleTextAttribute(hCon, current_fg | current_bg | FOREGROUND_INTENSITY);
-			print("%s\n", p_rationale);
-
-			SetConsoleTextAttribute(hCon, basecol);
-			switch (p_type) {
-				case ERR_ERROR: print("   At: "); break;
-				case ERR_WARNING: print("     At: "); break;
-				case ERR_SCRIPT: print("          At: "); break;
-				case ERR_SHADER: print("          At: "); break;
-			}
-
-			SetConsoleTextAttribute(hCon, current_fg | current_bg);
-			print("%s:%i\n", p_file, p_line);
-
-		} else {
-
-			SetConsoleTextAttribute(hCon, basecol | FOREGROUND_INTENSITY);
-			switch (p_type) {
-				case ERR_ERROR: print("ERROR: %s: ", p_function); break;
-				case ERR_WARNING: print("WARNING: %s: ", p_function); break;
-				case ERR_SCRIPT: print("SCRIPT ERROR: %s: ", p_function); break;
-				case ERR_SHADER: print("SCRIPT ERROR: %s: ", p_function); break;
-			}
-
-			SetConsoleTextAttribute(hCon, current_fg | current_bg | FOREGROUND_INTENSITY);
-			print("%s\n", p_code);
-
-			SetConsoleTextAttribute(hCon, basecol);
-			switch (p_type) {
-				case ERR_ERROR: print("   At: "); break;
-				case ERR_WARNING: print("     At: "); break;
-				case ERR_SCRIPT: print("          At: "); break;
-				case ERR_SHADER: print("          At: "); break;
-			}
-
-			SetConsoleTextAttribute(hCon, current_fg | current_bg);
-			print("%s:%i\n", p_file, p_line);
-		}
-
-		SetConsoleTextAttribute(hCon, sbi.wAttributes);
-	}
 }
 
 String OS_Windows::get_name() {
@@ -1803,7 +2162,9 @@ OS::TimeZoneInfo OS_Windows::get_time_zone_info() const {
 		ret.name = info.StandardName;
 	}
 
-	ret.bias = info.Bias;
+	// Bias value returned by GetTimeZoneInformation is inverted of what we expect
+	// For example on GMT-3 GetTimeZoneInformation return a Bias of 180, so invert the value to get -180
+	ret.bias = -info.Bias;
 	return ret;
 }
 
@@ -1831,8 +2192,13 @@ uint64_t OS_Windows::get_unix_time() const {
 
 uint64_t OS_Windows::get_system_time_secs() const {
 
-	const uint64_t WINDOWS_TICK = 10000000;
-	const uint64_t SEC_TO_UNIX_EPOCH = 11644473600LL;
+	return get_system_time_msecs() / 1000;
+}
+
+uint64_t OS_Windows::get_system_time_msecs() const {
+
+	const uint64_t WINDOWS_TICK = 10000;
+	const uint64_t MSEC_TO_UNIX_EPOCH = 11644473600000LL;
 
 	SYSTEMTIME st;
 	GetSystemTime(&st);
@@ -1843,7 +2209,7 @@ uint64_t OS_Windows::get_system_time_secs() const {
 	ret <<= 32;
 	ret |= ft.dwLowDateTime;
 
-	return (uint64_t)(ret / WINDOWS_TICK - SEC_TO_UNIX_EPOCH);
+	return (uint64_t)(ret / WINDOWS_TICK - MSEC_TO_UNIX_EPOCH);
 }
 
 void OS_Windows::delay_usec(uint32_t p_usec) const {
@@ -1872,7 +2238,9 @@ void OS_Windows::process_events() {
 
 	MSG msg;
 
-	joypad->process_joypads();
+	if (!drop_events) {
+		joypad->process_joypads();
+	}
 
 	while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
 
@@ -1880,7 +2248,10 @@ void OS_Windows::process_events() {
 		DispatchMessageW(&msg);
 	}
 
-	process_key_events();
+	if (!drop_events) {
+		process_key_events();
+		input->flush_accumulated_events();
+	}
 }
 
 void OS_Windows::set_cursor_shape(CursorShape p_shape) {
@@ -1889,6 +2260,11 @@ void OS_Windows::set_cursor_shape(CursorShape p_shape) {
 
 	if (cursor_shape == p_shape)
 		return;
+
+	if (mouse_mode != MOUSE_MODE_VISIBLE && mouse_mode != MOUSE_MODE_CONFINED) {
+		cursor_shape = p_shape;
+		return;
+	}
 
 	static const LPCTSTR win_cursors[CURSOR_MAX] = {
 		IDC_ARROW,
@@ -1910,11 +2286,181 @@ void OS_Windows::set_cursor_shape(CursorShape p_shape) {
 		IDC_HELP
 	};
 
-	SetCursor(LoadCursor(hInstance, win_cursors[p_shape]));
+	if (cursors[p_shape] != NULL) {
+		SetCursor(cursors[p_shape]);
+	} else {
+		SetCursor(LoadCursor(hInstance, win_cursors[p_shape]));
+	}
+
 	cursor_shape = p_shape;
 }
 
-Error OS_Windows::execute(const String &p_path, const List<String> &p_arguments, bool p_blocking, ProcessID *r_child_id, String *r_pipe, int *r_exitcode) {
+OS::CursorShape OS_Windows::get_cursor_shape() const {
+
+	return cursor_shape;
+}
+
+void OS_Windows::set_custom_mouse_cursor(const RES &p_cursor, CursorShape p_shape, const Vector2 &p_hotspot) {
+	if (p_cursor.is_valid()) {
+		Ref<Texture> texture = p_cursor;
+		Ref<AtlasTexture> atlas_texture = p_cursor;
+		Ref<Image> image;
+		Size2 texture_size;
+		Rect2 atlas_rect;
+
+		if (texture.is_valid()) {
+			image = texture->get_data();
+		}
+
+		if (!image.is_valid() && atlas_texture.is_valid()) {
+			texture = atlas_texture->get_atlas();
+
+			atlas_rect.size.width = texture->get_width();
+			atlas_rect.size.height = texture->get_height();
+			atlas_rect.position.x = atlas_texture->get_region().position.x;
+			atlas_rect.position.y = atlas_texture->get_region().position.y;
+
+			texture_size.width = atlas_texture->get_region().size.x;
+			texture_size.height = atlas_texture->get_region().size.y;
+		} else if (image.is_valid()) {
+			texture_size.width = texture->get_width();
+			texture_size.height = texture->get_height();
+		}
+
+		ERR_FAIL_COND(!texture.is_valid());
+		ERR_FAIL_COND(p_hotspot.x < 0 || p_hotspot.y < 0);
+		ERR_FAIL_COND(texture_size.width > 256 || texture_size.height > 256);
+		ERR_FAIL_COND(p_hotspot.x > texture_size.width || p_hotspot.y > texture_size.height);
+
+		image = texture->get_data();
+
+		ERR_FAIL_COND(!image.is_valid());
+
+		UINT image_size = texture_size.width * texture_size.height;
+
+		// Create the BITMAP with alpha channel
+		COLORREF *buffer = (COLORREF *)memalloc(sizeof(COLORREF) * image_size);
+
+		image->lock();
+		for (UINT index = 0; index < image_size; index++) {
+			int row_index = floor(index / texture_size.width) + atlas_rect.position.y;
+			int column_index = (index % int(texture_size.width)) + atlas_rect.position.x;
+
+			if (atlas_texture.is_valid()) {
+				column_index = MIN(column_index, atlas_rect.size.width - 1);
+				row_index = MIN(row_index, atlas_rect.size.height - 1);
+			}
+
+			*(buffer + index) = image->get_pixel(column_index, row_index).to_argb32();
+		}
+		image->unlock();
+
+		// Using 4 channels, so 4 * 8 bits
+		HBITMAP bitmap = CreateBitmap(texture_size.width, texture_size.height, 1, 4 * 8, buffer);
+		COLORREF clrTransparent = -1;
+
+		// Create the AND and XOR masks for the bitmap
+		HBITMAP hAndMask = NULL;
+		HBITMAP hXorMask = NULL;
+
+		GetMaskBitmaps(bitmap, clrTransparent, hAndMask, hXorMask);
+
+		if (NULL == hAndMask || NULL == hXorMask) {
+			memfree(buffer);
+			DeleteObject(bitmap);
+			return;
+		}
+
+		// Finally, create the icon
+		ICONINFO iconinfo = { 0 };
+		iconinfo.fIcon = FALSE;
+		iconinfo.xHotspot = p_hotspot.x;
+		iconinfo.yHotspot = p_hotspot.y;
+		iconinfo.hbmMask = hAndMask;
+		iconinfo.hbmColor = hXorMask;
+
+		if (cursors[p_shape])
+			DestroyIcon(cursors[p_shape]);
+
+		cursors[p_shape] = CreateIconIndirect(&iconinfo);
+
+		if (p_shape == cursor_shape) {
+			if (mouse_mode == MOUSE_MODE_VISIBLE || mouse_mode == MOUSE_MODE_CONFINED) {
+				SetCursor(cursors[p_shape]);
+			}
+		}
+
+		if (hAndMask != NULL) {
+			DeleteObject(hAndMask);
+		}
+
+		if (hXorMask != NULL) {
+			DeleteObject(hXorMask);
+		}
+
+		memfree(buffer);
+		DeleteObject(bitmap);
+	} else {
+		// Reset to default system cursor
+		cursors[p_shape] = NULL;
+
+		CursorShape c = cursor_shape;
+		cursor_shape = CURSOR_MAX;
+		set_cursor_shape(c);
+	}
+}
+
+void OS_Windows::GetMaskBitmaps(HBITMAP hSourceBitmap, COLORREF clrTransparent, OUT HBITMAP &hAndMaskBitmap, OUT HBITMAP &hXorMaskBitmap) {
+
+	// Get the system display DC
+	HDC hDC = GetDC(NULL);
+
+	// Create helper DC
+	HDC hMainDC = CreateCompatibleDC(hDC);
+	HDC hAndMaskDC = CreateCompatibleDC(hDC);
+	HDC hXorMaskDC = CreateCompatibleDC(hDC);
+
+	// Get the dimensions of the source bitmap
+	BITMAP bm;
+	GetObject(hSourceBitmap, sizeof(BITMAP), &bm);
+
+	// Create the mask bitmaps
+	hAndMaskBitmap = CreateCompatibleBitmap(hDC, bm.bmWidth, bm.bmHeight); // color
+	hXorMaskBitmap = CreateCompatibleBitmap(hDC, bm.bmWidth, bm.bmHeight); // color
+
+	// Release the system display DC
+	ReleaseDC(NULL, hDC);
+
+	// Select the bitmaps to helper DC
+	HBITMAP hOldMainBitmap = (HBITMAP)SelectObject(hMainDC, hSourceBitmap);
+	HBITMAP hOldAndMaskBitmap = (HBITMAP)SelectObject(hAndMaskDC, hAndMaskBitmap);
+	HBITMAP hOldXorMaskBitmap = (HBITMAP)SelectObject(hXorMaskDC, hXorMaskBitmap);
+
+	// Assign the monochrome AND mask bitmap pixels so that a pixels of the source bitmap
+	// with 'clrTransparent' will be white pixels of the monochrome bitmap
+	SetBkColor(hMainDC, clrTransparent);
+	BitBlt(hAndMaskDC, 0, 0, bm.bmWidth, bm.bmHeight, hMainDC, 0, 0, SRCCOPY);
+
+	// Assign the color XOR mask bitmap pixels so that a pixels of the source bitmap
+	// with 'clrTransparent' will be black and rest the pixels same as corresponding
+	// pixels of the source bitmap
+	SetBkColor(hXorMaskDC, RGB(0, 0, 0));
+	SetTextColor(hXorMaskDC, RGB(255, 255, 255));
+	BitBlt(hXorMaskDC, 0, 0, bm.bmWidth, bm.bmHeight, hAndMaskDC, 0, 0, SRCCOPY);
+	BitBlt(hXorMaskDC, 0, 0, bm.bmWidth, bm.bmHeight, hMainDC, 0, 0, SRCAND);
+
+	// Deselect bitmaps from the helper DC
+	SelectObject(hMainDC, hOldMainBitmap);
+	SelectObject(hAndMaskDC, hOldAndMaskBitmap);
+	SelectObject(hXorMaskDC, hOldXorMaskBitmap);
+
+	// Delete the helper DC
+	DeleteDC(hXorMaskDC);
+	DeleteDC(hAndMaskDC);
+	DeleteDC(hMainDC);
+}
+
+Error OS_Windows::execute(const String &p_path, const List<String> &p_arguments, bool p_blocking, ProcessID *r_child_id, String *r_pipe, int *r_exitcode, bool read_stderr) {
 
 	if (p_blocking && r_pipe) {
 
@@ -1925,10 +2471,6 @@ Error OS_Windows::execute(const String &p_path, const List<String> &p_arguments,
 
 			argss += String(" \"") + E->get() + "\"";
 		}
-
-		//print_line("ARGS: "+argss);
-		//argss+"\"";
-		//argss+=" 2>nul";
 
 		FILE *f = _wpopen(argss.c_str(), L"r");
 
@@ -1956,20 +2498,17 @@ Error OS_Windows::execute(const String &p_path, const List<String> &p_arguments,
 		I = I->next();
 	};
 
-	//cmdline+="\"";
-
 	ProcessInfo pi;
 	ZeroMemory(&pi.si, sizeof(pi.si));
 	pi.si.cb = sizeof(pi.si);
 	ZeroMemory(&pi.pi, sizeof(pi.pi));
 	LPSTARTUPINFOW si_w = (LPSTARTUPINFOW)&pi.si;
 
-	print_line("running cmdline: " + cmdline);
 	Vector<CharType> modstr; //windows wants to change this no idea why
 	modstr.resize(cmdline.size());
 	for (int i = 0; i < cmdline.size(); i++)
-		modstr[i] = cmdline[i];
-	int ret = CreateProcessW(NULL, modstr.ptr(), NULL, NULL, 0, NORMAL_PRIORITY_CLASS, NULL, NULL, si_w, &pi.pi);
+		modstr.write[i] = cmdline[i];
+	int ret = CreateProcessW(NULL, modstr.ptrw(), NULL, NULL, 0, NORMAL_PRIORITY_CLASS, NULL, NULL, si_w, &pi.pi);
 	ERR_FAIL_COND_V(ret == 0, ERR_CANT_FORK);
 
 	if (p_blocking) {
@@ -1978,6 +2517,8 @@ Error OS_Windows::execute(const String &p_path, const List<String> &p_arguments,
 		if (r_exitcode)
 			*r_exitcode = ret;
 
+		CloseHandle(pi.pi.hProcess);
+		CloseHandle(pi.pi.hThread);
 	} else {
 
 		ProcessID pid = pi.pi.dwProcessId;
@@ -1991,17 +2532,15 @@ Error OS_Windows::execute(const String &p_path, const List<String> &p_arguments,
 
 Error OS_Windows::kill(const ProcessID &p_pid) {
 
-	HANDLE h;
+	ERR_FAIL_COND_V(!process_map->has(p_pid), FAILED);
 
-	if (process_map->has(p_pid)) {
-		h = (*process_map)[p_pid].pi.hProcess;
-		process_map->erase(p_pid);
-	} else {
+	const PROCESS_INFORMATION pi = (*process_map)[p_pid].pi;
+	process_map->erase(p_pid);
 
-		ERR_FAIL_COND_V(!process_map->has(p_pid), FAILED);
-	};
+	const int ret = TerminateProcess(pi.hProcess, 0);
 
-	int ret = TerminateProcess(h, 0);
+	CloseHandle(pi.hProcess);
+	CloseHandle(pi.hThread);
 
 	return ret != 0 ? OK : FAILED;
 };
@@ -2039,7 +2578,7 @@ void OS_Windows::set_icon(const Ref<Image> &p_icon) {
 	int icon_len = 40 + h * w * 4;
 	Vector<BYTE> v;
 	v.resize(icon_len);
-	BYTE *icon_bmp = &v[0];
+	BYTE *icon_bmp = v.ptrw();
 
 	encode_uint32(40, &icon_bmp[0]);
 	encode_uint32(w, &icon_bmp[4]);
@@ -2080,7 +2619,16 @@ void OS_Windows::set_icon(const Ref<Image> &p_icon) {
 
 bool OS_Windows::has_environment(const String &p_var) const {
 
-	return getenv(p_var.utf8().get_data()) != NULL;
+#ifdef MINGW_ENABLED
+	return _wgetenv(p_var.c_str()) != NULL;
+#else
+	wchar_t *env;
+	size_t len;
+	_wdupenv_s(&env, &len, p_var.c_str());
+	const bool has_env = env != NULL;
+	free(env);
+	return has_env;
+#endif
 };
 
 String OS_Windows::get_environment(const String &p_var) const {
@@ -2091,6 +2639,11 @@ String OS_Windows::get_environment(const String &p_var) const {
 		return wval;
 	}
 	return "";
+}
+
+bool OS_Windows::set_environment(const String &p_var, const String &p_value) const {
+
+	return (bool)SetEnvironmentVariableW(p_var.c_str(), p_value.c_str());
 }
 
 String OS_Windows::get_stdin_string(bool p_block) {
@@ -2143,6 +2696,36 @@ String OS_Windows::get_locale() const {
 		return neutral;
 
 	return "en";
+}
+
+// We need this because GetSystemInfo() is unreliable on WOW64
+// see https://msdn.microsoft.com/en-us/library/windows/desktop/ms724381(v=vs.85).aspx
+// Taken from MSDN
+typedef BOOL(WINAPI *LPFN_ISWOW64PROCESS)(HANDLE, PBOOL);
+LPFN_ISWOW64PROCESS fnIsWow64Process;
+
+BOOL is_wow64() {
+	BOOL wow64 = FALSE;
+
+	fnIsWow64Process = (LPFN_ISWOW64PROCESS)GetProcAddress(GetModuleHandle(TEXT("kernel32")), "IsWow64Process");
+
+	if (fnIsWow64Process) {
+		if (!fnIsWow64Process(GetCurrentProcess(), &wow64)) {
+			wow64 = FALSE;
+		}
+	}
+
+	return wow64;
+}
+
+int OS_Windows::get_processor_count() const {
+	SYSTEM_INFO sysinfo;
+	if (is_wow64())
+		GetNativeSystemInfo(&sysinfo);
+	else
+		GetSystemInfo(&sysinfo);
+
+	return sysinfo.dwNumberOfProcessors;
 }
 
 OS::LatinKeyboardVariant OS_Windows::get_latin_keyboard_variant() const {
@@ -2222,6 +2805,10 @@ void OS_Windows::swap_buffers() {
 	gl_context->swap_buffers();
 }
 
+void OS_Windows::force_process_input() {
+	process_events(); // get rid of pending events
+}
+
 void OS_Windows::run() {
 
 	if (!main_loop)
@@ -2229,15 +2816,10 @@ void OS_Windows::run() {
 
 	main_loop->init();
 
-	uint64_t last_ticks = get_ticks_usec();
-
-	int frames = 0;
-	uint64_t frame = 0;
-
 	while (!force_quit) {
 
 		process_events(); // get rid of pending events
-		if (Main::iteration() == true)
+		if (Main::iteration())
 			break;
 	};
 
@@ -2247,6 +2829,43 @@ void OS_Windows::run() {
 MainLoop *OS_Windows::get_main_loop() const {
 
 	return main_loop;
+}
+
+String OS_Windows::get_config_path() const {
+
+	if (has_environment("XDG_CONFIG_HOME")) { // unlikely, but after all why not?
+		return get_environment("XDG_CONFIG_HOME");
+	} else if (has_environment("APPDATA")) {
+		return get_environment("APPDATA");
+	} else {
+		return ".";
+	}
+}
+
+String OS_Windows::get_data_path() const {
+
+	if (has_environment("XDG_DATA_HOME")) {
+		return get_environment("XDG_DATA_HOME");
+	} else {
+		return get_config_path();
+	}
+}
+
+String OS_Windows::get_cache_path() const {
+
+	if (has_environment("XDG_CACHE_HOME")) {
+		return get_environment("XDG_CACHE_HOME");
+	} else if (has_environment("TEMP")) {
+		return get_environment("TEMP");
+	} else {
+		return get_config_path();
+	}
+}
+
+// Get properly capitalized engine name for system paths
+String OS_Windows::get_godot_dir_name() const {
+
+	return String(VERSION_SHORT_NAME).capitalize();
 }
 
 String OS_Windows::get_system_dir(SystemDir p_dir) const {
@@ -2285,22 +2904,58 @@ String OS_Windows::get_system_dir(SystemDir p_dir) const {
 	ERR_FAIL_COND_V(res != S_OK, String());
 	return String(szPath);
 }
-String OS_Windows::get_data_dir() const {
 
-	String an = get_safe_application_name();
-	if (an != "") {
+String OS_Windows::get_user_data_dir() const {
 
-		if (has_environment("APPDATA")) {
-
-			bool use_godot = ProjectSettings::get_singleton()->get("application/config/use_shared_user_dir");
-			if (!use_godot)
-				return (OS::get_singleton()->get_environment("APPDATA") + "/" + an).replace("\\", "/");
-			else
-				return (OS::get_singleton()->get_environment("APPDATA") + "/Godot/app_userdata/" + an).replace("\\", "/");
+	String appname = get_safe_dir_name(ProjectSettings::get_singleton()->get("application/config/name"));
+	if (appname != "") {
+		bool use_custom_dir = ProjectSettings::get_singleton()->get("application/config/use_custom_user_dir");
+		if (use_custom_dir) {
+			String custom_dir = get_safe_dir_name(ProjectSettings::get_singleton()->get("application/config/custom_user_dir_name"), true);
+			if (custom_dir == "") {
+				custom_dir = appname;
+			}
+			return get_data_path().plus_file(custom_dir).replace("\\", "/");
+		} else {
+			return get_data_path().plus_file(get_godot_dir_name()).plus_file("app_userdata").plus_file(appname).replace("\\", "/");
 		}
 	}
 
 	return ProjectSettings::get_singleton()->get_resource_path();
+}
+
+String OS_Windows::get_unique_id() const {
+
+	HW_PROFILE_INFO HwProfInfo;
+	ERR_FAIL_COND_V(!GetCurrentHwProfile(&HwProfInfo), "");
+	return String(HwProfInfo.szHwProfileGuid);
+}
+
+void OS_Windows::set_ime_active(const bool p_active) {
+
+	if (p_active) {
+		ImmAssociateContext(hWnd, im_himc);
+
+		set_ime_position(im_position);
+	} else {
+		ImmAssociateContext(hWnd, (HIMC)0);
+	}
+}
+
+void OS_Windows::set_ime_position(const Point2 &p_pos) {
+
+	im_position = p_pos;
+
+	HIMC himc = ImmGetContext(hWnd);
+	if (himc == (HIMC)0)
+		return;
+
+	COMPOSITIONFORM cps;
+	cps.dwStyle = CFS_FORCE_POSITION;
+	cps.ptCurrentPos.x = im_position.x;
+	cps.ptCurrentPos.y = im_position.y;
+	ImmSetCompositionWindow(himc, &cps);
+	ImmReleaseContext(hWnd, himc);
 }
 
 bool OS_Windows::is_joy_known(int p_device) {
@@ -2311,21 +2966,21 @@ String OS_Windows::get_joy_guid(int p_device) const {
 	return input->get_joy_guid_remapped(p_device);
 }
 
-void OS_Windows::set_use_vsync(bool p_enable) {
+void OS_Windows::_set_use_vsync(bool p_enable) {
 
 	if (gl_context)
 		gl_context->set_use_vsync(p_enable);
 }
-
+/*
 bool OS_Windows::is_vsync_enabled() const {
 
 	if (gl_context)
 		return gl_context->is_using_vsync();
 
 	return true;
-}
+}*/
 
-PowerState OS_Windows::get_power_state() {
+OS::PowerState OS_Windows::get_power_state() {
 	return power_manager->get_power_state();
 }
 
@@ -2339,12 +2994,56 @@ int OS_Windows::get_power_percent_left() {
 
 bool OS_Windows::_check_internal_feature_support(const String &p_feature) {
 
-	return p_feature == "pc" || p_feature == "s3tc";
+	return p_feature == "pc";
+}
+
+void OS_Windows::disable_crash_handler() {
+	crash_handler.disable();
+}
+
+bool OS_Windows::is_disable_crash_handler() const {
+	return crash_handler.is_disabled();
+}
+
+void OS_Windows::process_and_drop_events() {
+
+	drop_events = true;
+	process_events();
+	drop_events = false;
+}
+
+Error OS_Windows::move_to_trash(const String &p_path) {
+	SHFILEOPSTRUCTW sf;
+	WCHAR *from = new WCHAR[p_path.length() + 2];
+	wcscpy_s(from, p_path.length() + 1, p_path.c_str());
+	from[p_path.length() + 1] = 0;
+
+	sf.hwnd = hWnd;
+	sf.wFunc = FO_DELETE;
+	sf.pFrom = from;
+	sf.pTo = NULL;
+	sf.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION;
+	sf.fAnyOperationsAborted = FALSE;
+	sf.hNameMappings = NULL;
+	sf.lpszProgressTitle = NULL;
+
+	int ret = SHFileOperationW(&sf);
+	delete[] from;
+
+	if (ret) {
+		ERR_PRINTS("SHFileOperation error: " + itos(ret));
+		return FAILED;
+	}
+
+	return OK;
 }
 
 OS_Windows::OS_Windows(HINSTANCE _hInstance) {
 
+	drop_events = false;
 	key_event_pos = 0;
+	layered_window = false;
+	hBitmap = NULL;
 	force_quit = false;
 	alt_mem = false;
 	gr_mem = false;
@@ -2362,15 +3061,23 @@ OS_Windows::OS_Windows(HINSTANCE _hInstance) {
 #endif
 	user_proc = NULL;
 
-#ifdef RTAUDIO_ENABLED
-	AudioDriverManager::add_driver(&driver_rtaudio);
+#ifdef WASAPI_ENABLED
+	AudioDriverManager::add_driver(&driver_wasapi);
 #endif
 #ifdef XAUDIO2_ENABLED
 	AudioDriverManager::add_driver(&driver_xaudio2);
 #endif
+
+	Vector<Logger *> loggers;
+	loggers.push_back(memnew(WindowsTerminalLogger));
+	_set_logger(memnew(CompositeLogger(loggers)));
 }
 
 OS_Windows::~OS_Windows() {
+	if (is_layered_allowed() && layered_window) {
+		DeleteObject(hBitmap);
+		DeleteDC(hDC_dib);
+	}
 #ifdef STDOUT_FILE
 	fclose(stdo);
 #endif

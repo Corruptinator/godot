@@ -1,12 +1,12 @@
 /*************************************************************************/
-/*  power_osx.cpp                                                    */
+/*  power_osx.cpp                                                        */
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -67,7 +67,7 @@ Adapted from corresponding SDL 2.0 code.
 	CFDictionaryGetValueIfPresent(dict, CFSTR(k), (const void **)v)
 
 /* Note that AC power sources also include a laptop battery it is charging. */
-void power_osx::checkps(CFDictionaryRef dict, bool *have_ac, bool *have_battery, bool *charging) {
+void PowerOSX::checkps(CFDictionaryRef dict, bool *have_ac, bool *have_battery, bool *charging) {
 	CFStringRef strval; /* don't CFRelease() this. */
 	CFBooleanRef bval;
 	CFNumberRef numval;
@@ -169,12 +169,12 @@ void power_osx::checkps(CFDictionaryRef dict, bool *have_ac, bool *have_battery,
 #undef STRMATCH
 
 //  CODE CHUNK IMPORTED FROM SDL 2.0
-bool power_osx::GetPowerInfo_MacOSX() {
+bool PowerOSX::GetPowerInfo_MacOSX() {
 	CFTypeRef blob = IOPSCopyPowerSourcesInfo();
 
 	nsecs_left = -1;
 	percent_left = -1;
-	power_state = POWERSTATE_UNKNOWN;
+	power_state = OS::POWERSTATE_UNKNOWN;
 
 	if (blob != NULL) {
 		CFArrayRef list = IOPSCopyPowerSourcesList(blob);
@@ -194,13 +194,13 @@ bool power_osx::GetPowerInfo_MacOSX() {
 			}
 
 			if (!have_battery) {
-				power_state = POWERSTATE_NO_BATTERY;
+				power_state = OS::POWERSTATE_NO_BATTERY;
 			} else if (charging) {
-				power_state = POWERSTATE_CHARGING;
+				power_state = OS::POWERSTATE_CHARGING;
 			} else if (have_ac) {
-				power_state = POWERSTATE_CHARGED;
+				power_state = OS::POWERSTATE_CHARGED;
 			} else {
-				power_state = POWERSTATE_ON_BATTERY;
+				power_state = OS::POWERSTATE_ON_BATTERY;
 			}
 
 			CFRelease(list);
@@ -211,22 +211,22 @@ bool power_osx::GetPowerInfo_MacOSX() {
 	return true; /* always the definitive answer on Mac OS X. */
 }
 
-bool power_osx::UpdatePowerInfo() {
+bool PowerOSX::UpdatePowerInfo() {
 	if (GetPowerInfo_MacOSX()) {
 		return true;
 	}
 	return false;
 }
 
-PowerState power_osx::get_power_state() {
+OS::PowerState PowerOSX::get_power_state() {
 	if (UpdatePowerInfo()) {
 		return power_state;
 	} else {
-		return POWERSTATE_UNKNOWN;
+		return OS::POWERSTATE_UNKNOWN;
 	}
 }
 
-int power_osx::get_power_seconds_left() {
+int PowerOSX::get_power_seconds_left() {
 	if (UpdatePowerInfo()) {
 		return nsecs_left;
 	} else {
@@ -234,7 +234,7 @@ int power_osx::get_power_seconds_left() {
 	}
 }
 
-int power_osx::get_power_percent_left() {
+int PowerOSX::get_power_percent_left() {
 	if (UpdatePowerInfo()) {
 		return percent_left;
 	} else {
@@ -242,9 +242,11 @@ int power_osx::get_power_percent_left() {
 	}
 }
 
-power_osx::power_osx()
-	: nsecs_left(-1), percent_left(-1), power_state(POWERSTATE_UNKNOWN) {
+PowerOSX::PowerOSX() :
+		nsecs_left(-1),
+		percent_left(-1),
+		power_state(OS::POWERSTATE_UNKNOWN) {
 }
 
-power_osx::~power_osx() {
+PowerOSX::~PowerOSX() {
 }

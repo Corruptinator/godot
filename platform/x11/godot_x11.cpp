@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include <limits.h>
 #include <locale.h>
 #include <stdlib.h>
@@ -42,17 +43,20 @@ int main(int argc, char *argv[]) {
 	setlocale(LC_CTYPE, "");
 
 	char *cwd = (char *)malloc(PATH_MAX);
-	getcwd(cwd, PATH_MAX);
+	char *ret = getcwd(cwd, PATH_MAX);
 
 	Error err = Main::setup(argv[0], argc - 1, &argv[1]);
-	if (err != OK)
+	if (err != OK) {
+		free(cwd);
 		return 255;
+	}
 
 	if (Main::start())
 		os.run(); // it is actually the OS that decides how to run
 	Main::cleanup();
 
-	chdir(cwd);
+	if (ret)
+		chdir(cwd);
 	free(cwd);
 
 	return os.get_exit_code();

@@ -6,13 +6,25 @@
          Modifications for Zip64 support
          Copyright (C) 2009-2010 Mathias Svensson ( http://result42.com )
 
-         For more info read LICENSE-MiniZip.txt
+         For more info read MiniZip_info.txt
 
 */
 
-#if (defined(_WIN32))
+#if defined(_WIN32) && (!(defined(_CRT_SECURE_NO_WARNINGS)))
         #define _CRT_SECURE_NO_WARNINGS
 #endif
+
+#if defined(__APPLE__) || defined(IOAPI_NO_64)
+// In darwin and perhaps other BSD variants off_t is a 64 bit value, hence no need for specific 64 bit functions
+#define FOPEN_FUNC(filename, mode) fopen(filename, mode)
+#define FTELLO_FUNC(stream) ftello(stream)
+#define FSEEKO_FUNC(stream, offset, origin) fseeko(stream, offset, origin)
+#else
+#define FOPEN_FUNC(filename, mode) fopen64(filename, mode)
+#define FTELLO_FUNC(stream) ftello64(stream)
+#define FSEEKO_FUNC(stream, offset, origin) fseeko64(stream, offset, origin)
+#endif
+
 
 #include "ioapi.h"
 
@@ -47,7 +59,7 @@ ZPOS64_T call_ztell64 (const zlib_filefunc64_32_def* pfilefunc,voidpf filestream
     else
     {
         uLong tell_uLong = (*(pfilefunc->ztell32_file))(pfilefunc->zfile_func64.opaque,filestream);
-        if ((tell_uLong) == ((uLong)-1))
+        if ((tell_uLong) == MAXU32)
             return (ZPOS64_T)-1;
         else
             return tell_uLong;
@@ -68,11 +80,15 @@ void fill_zlib_filefunc64_32_def_from_filefunc32(zlib_filefunc64_32_def* p_filef
     p_filefunc64_32->zfile_func64.opaque = p_filefunc32->opaque;
     p_filefunc64_32->zseek32_file = p_filefunc32->zseek_file;
     p_filefunc64_32->ztell32_file = p_filefunc32->ztell_file;
+    /* GODOT start */
     p_filefunc64_32->zfile_func64.alloc_mem = p_filefunc32->alloc_mem;
     p_filefunc64_32->zfile_func64.free_mem = p_filefunc32->free_mem;
+    /* GODOT end */
 }
 
+/* GODOT start */
 /*
+// GODOT end
 
 
 static voidpf  ZCALLBACK fopen_file_func OF((voidpf opaque, const char* filename, int mode));
@@ -115,9 +131,10 @@ static voidpf ZCALLBACK fopen64_file_func (voidpf opaque, const void* filename, 
         mode_fopen = "wb";
 
     if ((filename!=NULL) && (mode_fopen != NULL))
-        file = fopen64((const char*)filename, mode_fopen);
+        file = FOPEN_FUNC((const char*)filename, mode_fopen);
     return file;
 }
+
 
 static uLong ZCALLBACK fread_file_func (voidpf opaque, voidpf stream, void* buf, uLong size)
 {
@@ -140,10 +157,11 @@ static long ZCALLBACK ftell_file_func (voidpf opaque, voidpf stream)
     return ret;
 }
 
+
 static ZPOS64_T ZCALLBACK ftell64_file_func (voidpf opaque, voidpf stream)
 {
     ZPOS64_T ret;
-    ret = ftello64((FILE *)stream);
+    ret = FTELLO_FUNC((FILE *)stream);
     return ret;
 }
 
@@ -189,7 +207,7 @@ static long ZCALLBACK fseek64_file_func (voidpf  opaque, voidpf stream, ZPOS64_T
     }
     ret = 0;
 
-    if(fseeko64((FILE *)stream, offset, fseek_origin) != 0)
+    if(FSEEKO_FUNC((FILE *)stream, offset, fseek_origin) != 0)
                         ret = -1;
 
     return ret;
@@ -234,4 +252,6 @@ void fill_fopen64_filefunc (zlib_filefunc64_def*  pzlib_filefunc_def)
     pzlib_filefunc_def->zerror_file = ferror_file_func;
     pzlib_filefunc_def->opaque = NULL;
 }
+// GODOT start
 */
+/* GODOT end */

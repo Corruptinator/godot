@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -33,6 +33,8 @@
 
 #include "scene/3d/camera.h"
 #include "scene/3d/spatial.h"
+#include "scene/resources/mesh.h"
+#include "servers/arvr/arvr_positional_tracker.h"
 
 /**
 	@author Bastiaan Olij <mux213@gmail.com>
@@ -51,12 +53,17 @@ protected:
 public:
 	String get_configuration_warning() const;
 
+	virtual Vector3 project_local_ray_normal(const Point2 &p_pos) const;
+	virtual Point2 unproject_position(const Vector3 &p_pos) const;
+	virtual Vector3 project_position(const Point2 &p_point) const;
+	virtual Vector<Plane> get_frustum() const;
+
 	ARVRCamera();
 	~ARVRCamera();
 };
 
 /*
-	ARVRController is a helper node that automatically updates it's position based on tracker data.
+	ARVRController is a helper node that automatically updates its position based on tracker data.
 
 	It must be a child node of our ARVROrigin node
 */
@@ -69,6 +76,7 @@ private:
 	int controller_id;
 	bool is_active;
 	int button_states;
+	Ref<Mesh> mesh;
 
 protected:
 	void _notification(int p_what);
@@ -83,7 +91,13 @@ public:
 	int is_button_pressed(int p_button) const;
 	float get_joystick_axis(int p_axis) const;
 
+	real_t get_rumble() const;
+	void set_rumble(real_t p_rumble);
+
 	bool get_is_active() const;
+	ARVRPositionalTracker::TrackerHand get_hand() const;
+
+	Ref<Mesh> get_mesh(void) const;
 
 	String get_configuration_warning() const;
 
@@ -92,7 +106,7 @@ public:
 };
 
 /*
-	ARVRAnchor is a helper node that automatically updates it's position based on anchor data, it represents a real world location.
+	ARVRAnchor is a helper node that automatically updates its position based on anchor data, it represents a real world location.
 	It must be a child node of our ARVROrigin node
 */
 
@@ -103,6 +117,7 @@ private:
 	int anchor_id;
 	bool is_active;
 	Vector3 size;
+	Ref<Mesh> mesh;
 
 protected:
 	void _notification(int p_what);
@@ -115,6 +130,10 @@ public:
 
 	bool get_is_active() const;
 	Vector3 get_size() const;
+
+	Plane get_plane() const;
+
+	Ref<Mesh> get_mesh(void) const;
 
 	String get_configuration_warning() const;
 

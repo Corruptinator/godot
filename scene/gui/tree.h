@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,10 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef TREE_H
 #define TREE_H
 
-#include "core/helper/value_evaluator.h"
 #include "scene/gui/control.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/popup_menu.h"
@@ -53,8 +53,7 @@ public:
 		CELL_MODE_STRING, ///< just a string
 		CELL_MODE_CHECK, ///< string + check
 		CELL_MODE_RANGE, ///< Contains a range
-		CELL_MODE_RANGE_EXPRESSION, ///< Contains a range
-		CELL_MODE_ICON, ///< Contains a icon, not editable
+		CELL_MODE_ICON, ///< Contains an icon, not editable
 		CELL_MODE_CUSTOM, ///< Contains a custom value, show a string, and an edit button
 	};
 
@@ -143,12 +142,13 @@ private:
 
 	Vector<Cell> cells;
 
-	bool collapsed; // wont show childs
+	bool collapsed; // won't show children
 	bool disable_folding;
+	int custom_min_height;
 
 	TreeItem *parent; // parent item
 	TreeItem *next; // next in list
-	TreeItem *childs; //child items
+	TreeItem *children; //child items
 	Tree *tree; //tree (for reference)
 
 	TreeItem(Tree *p_tree);
@@ -172,7 +172,9 @@ protected:
 
 		return d;
 	}
-	void _remove_child(Object *p_child) { remove_child(p_child->cast_to<TreeItem>()); }
+	void _remove_child(Object *p_child) {
+		remove_child(Object::cast_to<TreeItem>(p_child));
+	}
 
 public:
 	/* cell mode */
@@ -227,6 +229,9 @@ public:
 
 	void set_collapsed(bool p_collapsed);
 	bool is_collapsed();
+
+	void set_custom_minimum_height(int p_height);
+	int get_custom_minimum_height() const;
 
 	TreeItem *get_prev();
 	TreeItem *get_next();
@@ -324,6 +329,8 @@ private:
 	bool range_drag_enabled;
 	Vector2 range_drag_capture_pos;
 
+	bool propagate_mouse_activated;
+
 	//TreeItem *cursor_item;
 	//int cursor_column;
 
@@ -353,7 +360,7 @@ private:
 	LineEdit *text_editor;
 	HSlider *value_editor;
 	bool updating_value_editor;
-	uint32_t focus_in_id;
+	int64_t focus_in_id;
 	PopupMenu *popup_menu;
 
 	Vector<ColumnInfo> columns;
@@ -412,6 +419,7 @@ private:
 		Ref<Texture> arrow_collapsed;
 		Ref<Texture> arrow;
 		Ref<Texture> select_arrow;
+		Ref<Texture> select_option;
 		Ref<Texture> updown;
 
 		Color font_color;
@@ -428,6 +436,7 @@ private:
 		int button_margin;
 		Point2 offset;
 		int draw_relationship_lines;
+		int draw_guides;
 		int scroll_border;
 		int scroll_speed;
 
@@ -449,6 +458,8 @@ private:
 
 		TreeItem *hover_item;
 		int hover_cell;
+
+		Point2i text_editor_position;
 
 	} cache;
 
@@ -490,33 +501,44 @@ private:
 	bool allow_rmb_select;
 	bool scrolling;
 
-	bool force_select_on_already_selected;
+	bool allow_reselect;
+
 	bool force_edit_checkbox_only_on_checkbox;
 
 	bool hide_folding;
 
-	ValueEvaluator *evaluator;
-
 	int _count_selected_items(TreeItem *p_from) const;
+	void _go_left();
+	void _go_right();
+	void _go_down();
+	void _go_up();
 
 protected:
 	static void _bind_methods();
 
 	//bind helpers
-	Object *_create_item(Object *p_parent) { return create_item(p_parent->cast_to<TreeItem>()); }
-	TreeItem *_get_next_selected(Object *p_item) { return get_next_selected(p_item->cast_to<TreeItem>()); }
-	Rect2 _get_item_rect(Object *p_item, int p_column) const { return get_item_rect(p_item->cast_to<TreeItem>(), p_column); }
+	TreeItem *_create_item(Object *p_parent, int p_idx = -1) {
+		return create_item(Object::cast_to<TreeItem>(p_parent), p_idx);
+	}
+
+	TreeItem *_get_next_selected(Object *p_item) {
+		return get_next_selected(Object::cast_to<TreeItem>(p_item));
+	}
+
+	Rect2 _get_item_rect(Object *p_item, int p_column) const {
+		return get_item_rect(Object::cast_to<TreeItem>(p_item), p_column);
+	}
 
 public:
 	virtual String get_tooltip(const Point2 &p_pos) const;
 
-	TreeItem *get_item_at_pos(const Point2 &p_pos) const;
-	int get_column_at_pos(const Point2 &p_pos) const;
-	int get_drop_section_at_pos(const Point2 &p_pos) const;
+	TreeItem *get_item_at_position(const Point2 &p_pos) const;
+	int get_column_at_position(const Point2 &p_pos) const;
+	int get_drop_section_at_position(const Point2 &p_pos) const;
 
 	void clear();
 
-	TreeItem *create_item(TreeItem *p_parent = 0);
+	TreeItem *create_item(TreeItem *p_parent = 0, int p_idx = -1);
 	TreeItem *get_root();
 	TreeItem *get_last_item();
 
@@ -525,11 +547,15 @@ public:
 	int get_column_width(int p_column) const;
 
 	void set_hide_root(bool p_enabled);
+	bool is_root_hidden() const;
 	TreeItem *get_next_selected(TreeItem *p_item);
 	TreeItem *get_selected() const;
 	int get_selected_column() const;
 	int get_pressed_button() const;
 	void set_select_mode(SelectMode p_mode);
+	SelectMode get_select_mode() const;
+	void deselect_all();
+	bool is_anything_selected();
 
 	void set_columns(int p_columns);
 	int get_columns() const;
@@ -554,6 +580,7 @@ public:
 	TreeItem *search_item_text(const String &p_find, int *r_col = NULL, bool p_selectable = false);
 
 	Point2 get_scroll() const;
+	void scroll_to_item(TreeItem *p_item);
 
 	void set_cursor_can_exit_tree(bool p_enable);
 	bool can_cursor_exit_tree() const;
@@ -566,20 +593,19 @@ public:
 	void set_drop_mode_flags(int p_flags);
 	int get_drop_mode_flags() const;
 
-	void set_single_select_cell_editing_only_when_already_selected(bool p_enable);
-	bool get_single_select_cell_editing_only_when_already_selected() const;
-
 	void set_edit_checkbox_cell_only_when_checkbox_is_pressed(bool p_enable);
 	bool get_edit_checkbox_cell_only_when_checkbox_is_pressed() const;
 
 	void set_allow_rmb_select(bool p_allow);
 	bool get_allow_rmb_select() const;
 
-	void set_value_evaluator(ValueEvaluator *p_evaluator);
+	void set_allow_reselect(bool p_allow);
+	bool get_allow_reselect() const;
 
 	Tree();
 	~Tree();
 };
 
 VARIANT_ENUM_CAST(Tree::SelectMode);
+VARIANT_ENUM_CAST(Tree::DropModeFlags);
 #endif

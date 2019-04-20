@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,13 +27,14 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef XML_PARSER_H
 #define XML_PARSER_H
 
-#include "os/file_access.h"
-#include "reference.h"
-#include "ustring.h"
-#include "vector.h"
+#include "core/os/file_access.h"
+#include "core/reference.h"
+#include "core/ustring.h"
+#include "core/vector.h"
 
 /*
   Based on irrXML (see their zlib license). Added mainly for compatibility with their Collada loader.
@@ -67,7 +68,7 @@ public:
 private:
 	char *data;
 	char *P;
-	int length;
+	uint64_t length;
 	void unescape(String &p_str);
 	Vector<String> special_characters;
 	String node_name;

@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,15 +27,17 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef VIDEO_STREAM_THEORA_H
 #define VIDEO_STREAM_THEORA_H
 
-#include "io/resource_loader.h"
-#include "os/file_access.h"
-#include "os/semaphore.h"
-#include "os/thread.h"
-#include "ring_buffer.h"
+#include "core/io/resource_loader.h"
+#include "core/os/file_access.h"
+#include "core/os/semaphore.h"
+#include "core/os/thread.h"
+#include "core/ring_buffer.h"
 #include "scene/resources/video_stream.h"
+#include "servers/audio_server.h"
 
 #include <theora/theoradec.h>
 #include <vorbis/codec.h>
@@ -129,7 +131,7 @@ public:
 	virtual bool is_playing() const;
 
 	virtual void set_paused(bool p_paused);
-	virtual bool is_paused(bool p_paused) const;
+	virtual bool is_paused() const;
 
 	virtual void set_loop(bool p_enable);
 	virtual bool has_loop() const;
@@ -140,8 +142,8 @@ public:
 
 	virtual int get_loop_count() const;
 
-	virtual float get_pos() const;
-	virtual void seek_pos(float p_time);
+	virtual float get_playback_position() const;
+	virtual void seek(float p_time);
 
 	void set_file(const String &p_file);
 
@@ -165,6 +167,9 @@ class VideoStreamTheora : public VideoStream {
 	String file;
 	int audio_track;
 
+protected:
+	static void _bind_methods();
+
 public:
 	Ref<VideoStreamPlayback> instance_playback() {
 		Ref<VideoStreamPlaybackTheora> pb = memnew(VideoStreamPlaybackTheora);
@@ -174,12 +179,14 @@ public:
 	}
 
 	void set_file(const String &p_file) { file = p_file; }
+	String get_file() { return file; }
 	void set_audio_track(int p_track) { audio_track = p_track; }
 
 	VideoStreamTheora() { audio_track = 0; }
 };
 
-class ResourceFormatLoaderVideoStreamTheora : public ResourceFormatLoader {
+class ResourceFormatLoaderTheora : public ResourceFormatLoader {
+	GDCLASS(ResourceFormatLoaderTheora, ResourceFormatLoader)
 public:
 	virtual RES load(const String &p_path, const String &p_original_path = "", Error *r_error = NULL);
 	virtual void get_recognized_extensions(List<String> *p_extensions) const;

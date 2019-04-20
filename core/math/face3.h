@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,13 +27,14 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef FACE3_H
 #define FACE3_H
 
-#include "plane.h"
-#include "rect3.h"
-#include "transform.h"
-#include "vector3.h"
+#include "core/math/aabb.h"
+#include "core/math/plane.h"
+#include "core/math/transform.h"
+#include "core/math/vector3.h"
 
 class Face3 {
 public:
@@ -76,16 +77,16 @@ public:
 	void get_support(const Vector3 &p_normal, const Transform &p_transform, Vector3 *p_vertices, int *p_count, int p_max) const;
 	void project_range(const Vector3 &p_normal, const Transform &p_transform, real_t &r_min, real_t &r_max) const;
 
-	Rect3 get_aabb() const {
+	AABB get_aabb() const {
 
-		Rect3 aabb(vertex[0], Vector3());
+		AABB aabb(vertex[0], Vector3());
 		aabb.expand_to(vertex[1]);
 		aabb.expand_to(vertex[2]);
 		return aabb;
 	}
 
-	bool intersects_aabb(const Rect3 &p_aabb) const;
-	_FORCE_INLINE_ bool intersects_aabb2(const Rect3 &p_aabb) const;
+	bool intersects_aabb(const AABB &p_aabb) const;
+	_FORCE_INLINE_ bool intersects_aabb2(const AABB &p_aabb) const;
 	operator String() const;
 
 	inline Face3() {}
@@ -96,7 +97,7 @@ public:
 	}
 };
 
-bool Face3::intersects_aabb2(const Rect3 &p_aabb) const {
+bool Face3::intersects_aabb2(const AABB &p_aabb) const {
 
 	Vector3 perp = (vertex[0] - vertex[2]).cross(vertex[0] - vertex[1]);
 
@@ -240,13 +241,13 @@ bool Face3::intersects_aabb2(const Rect3 &p_aabb) const {
 			real_t minT = 1e20, maxT = -1e20;
 			for (int k = 0; k < 3; k++) {
 
-				real_t d = axis.dot(vertex[k]);
+				real_t vert_d = axis.dot(vertex[k]);
 
-				if (d > maxT)
-					maxT = d;
+				if (vert_d > maxT)
+					maxT = vert_d;
 
-				if (d < minT)
-					minT = d;
+				if (vert_d < minT)
+					minT = vert_d;
 			}
 
 			if (maxB < minT || maxT < minB)
@@ -255,7 +256,5 @@ bool Face3::intersects_aabb2(const Rect3 &p_aabb) const {
 	}
 	return true;
 }
-
-//this sucks...
 
 #endif // FACE3_H

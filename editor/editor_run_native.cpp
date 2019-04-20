@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,10 +27,12 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "editor_run_native.h"
 
 #include "editor_export.h"
 #include "editor_node.h"
+#include "editor_scale.h"
 
 void EditorRunNative::_notification(int p_what) {
 
@@ -48,7 +50,7 @@ void EditorRunNative::_notification(int p_what) {
 				im->clear_mipmaps();
 				if (!im->empty()) {
 
-					im->resize(16, 16);
+					im->resize(16 * EDSCALE, 16 * EDSCALE);
 					Ref<ImageTexture> small_icon;
 					small_icon.instance();
 					small_icon->create_from_image(im, 0);
@@ -80,7 +82,7 @@ void EditorRunNative::_notification(int p_what) {
 				} else {
 					mb->get_popup()->clear();
 					mb->show();
-					mb->set_tooltip("Select device from the list");
+					mb->set_tooltip(TTR("Select device from the list"));
 					for (int i = 0; i < dc; i++) {
 						mb->get_popup()->add_icon_item(get_icon("Play", "EditorIcons"), eep->get_device_name(i));
 						mb->get_popup()->set_item_tooltip(mb->get_popup()->get_item_count() - 1, eep->get_device_info(i).strip_edges());
@@ -118,7 +120,7 @@ void EditorRunNative::_run_native(int p_idx, int p_platform) {
 	}
 
 	if (preset.is_null()) {
-		EditorNode::get_singleton()->show_warning("No runnable export preset found for this platform.\nPlease add a runnable preset in the export menu.");
+		EditorNode::get_singleton()->show_warning(TTR("No runnable export preset found for this platform.\nPlease add a runnable preset in the export menu."));
 		return;
 	}
 

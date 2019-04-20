@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,12 +27,13 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef PHYSICS2DSERVERWRAPMT_H
 #define PHYSICS2DSERVERWRAPMT_H
 
-#include "command_queue_mt.h"
-#include "os/thread.h"
-#include "project_settings.h"
+#include "core/command_queue_mt.h"
+#include "core/os/thread.h"
+#include "core/project_settings.h"
 #include "servers/physics_2d_server.h"
 
 #ifdef DEBUG_SYNC
@@ -64,21 +65,10 @@ class Physics2DServerWrapMT : public Physics2DServer {
 
 	void thread_exit();
 
-	Mutex *alloc_mutex;
 	bool first_frame;
 
-	int shape_pool_max_size;
-	List<RID> shape_id_pool;
-	int area_pool_max_size;
-	List<RID> area_id_pool;
-	int body_pool_max_size;
-	List<RID> body_id_pool;
-	int pin_joint_pool_max_size;
-	List<RID> pin_joint_id_pool;
-	int groove_joint_pool_max_size;
-	List<RID> groove_joint_id_pool;
-	int damped_spring_joint_pool_max_size;
-	List<RID> damped_spring_joint_id_pool;
+	Mutex *alloc_mutex;
+	int pool_max_size;
 
 public:
 #define ServerName Physics2DServer
@@ -87,7 +77,15 @@ public:
 #include "servers/server_wrap_mt_common.h"
 
 	//FUNC1RID(shape,ShapeType); todo fix
-	FUNC1R(RID, shape_create, ShapeType);
+	FUNCRID(line_shape)
+	FUNCRID(ray_shape)
+	FUNCRID(segment_shape)
+	FUNCRID(circle_shape)
+	FUNCRID(rectangle_shape)
+	FUNCRID(capsule_shape)
+	FUNCRID(convex_polygon_shape)
+	FUNCRID(concave_polygon_shape)
+
 	FUNC2(shape_set_data, RID, const Variant &);
 	FUNC2(shape_set_custom_solver_bias, RID, real_t);
 
@@ -104,14 +102,14 @@ public:
 
 	/* SPACE API */
 
-	FUNC0R(RID, space_create);
+	FUNCRID(space);
 	FUNC2(space_set_active, RID, bool);
 	FUNC1RC(bool, space_is_active, RID);
 
 	FUNC3(space_set_param, RID, SpaceParameter, real_t);
 	FUNC2RC(real_t, space_get_param, RID, SpaceParameter);
 
-	// this function only works on fixed process, errors and returns null otherwise
+	// this function only works on physics process, errors and returns null otherwise
 	Physics2DDirectSpaceState *space_get_direct_state(RID p_space) {
 
 		ERR_FAIL_COND_V(main_thread != Thread::get_caller_id(), NULL);
@@ -134,7 +132,7 @@ public:
 	/* AREA API */
 
 	//FUNC0RID(area);
-	FUNC0R(RID, area_create);
+	FUNCRID(area);
 
 	FUNC2(area_set_space, RID, RID);
 	FUNC1RC(RID, area_get_space, RID);
@@ -156,6 +154,9 @@ public:
 	FUNC2(area_attach_object_instance_id, RID, ObjectID);
 	FUNC1RC(ObjectID, area_get_object_instance_id, RID);
 
+	FUNC2(area_attach_canvas_instance_id, RID, ObjectID);
+	FUNC1RC(ObjectID, area_get_canvas_instance_id, RID);
+
 	FUNC3(area_set_param, RID, AreaParameter, const Variant &);
 	FUNC2(area_set_transform, RID, const Transform2D &);
 
@@ -174,7 +175,7 @@ public:
 	/* BODY API */
 
 	//FUNC2RID(body,BodyMode,bool);
-	FUNC2R(RID, body_create, BodyMode, bool)
+	FUNCRID(body)
 
 	FUNC2(body_set_space, RID, RID);
 	FUNC1RC(RID, body_get_space, RID);
@@ -193,13 +194,16 @@ public:
 	FUNC2RC(RID, body_get_shape, RID, int);
 
 	FUNC3(body_set_shape_disabled, RID, int, bool);
-	FUNC3(body_set_shape_as_one_way_collision, RID, int, bool);
+	FUNC4(body_set_shape_as_one_way_collision, RID, int, bool, float);
 
 	FUNC2(body_remove_shape, RID, int);
 	FUNC1(body_clear_shapes, RID);
 
 	FUNC2(body_attach_object_instance_id, RID, uint32_t);
 	FUNC1RC(uint32_t, body_get_object_instance_id, RID);
+
+	FUNC2(body_attach_canvas_instance_id, RID, uint32_t);
+	FUNC1RC(uint32_t, body_get_canvas_instance_id, RID);
 
 	FUNC2(body_set_continuous_collision_detection_mode, RID, CCDMode);
 	FUNC1RC(CCDMode, body_get_continuous_collision_detection_mode, RID);
@@ -222,7 +226,11 @@ public:
 	FUNC2(body_set_applied_torque, RID, real_t);
 	FUNC1RC(real_t, body_get_applied_torque, RID);
 
+	FUNC2(body_add_central_force, RID, const Vector2 &);
 	FUNC3(body_add_force, RID, const Vector2 &, const Vector2 &);
+	FUNC2(body_add_torque, RID, real_t);
+	FUNC2(body_apply_central_impulse, RID, const Vector2 &);
+	FUNC2(body_apply_torque_impulse, RID, real_t);
 	FUNC3(body_apply_impulse, RID, const Vector2 &, const Vector2 &);
 	FUNC2(body_set_axis_velocity, RID, const Vector2 &);
 
@@ -247,10 +255,23 @@ public:
 
 	FUNC2(body_set_pickable, RID, bool);
 
-	bool body_test_motion(RID p_body, const Transform2D &p_from, const Vector2 &p_motion, real_t p_margin = 0.001, MotionResult *r_result = NULL) {
+	bool body_test_motion(RID p_body, const Transform2D &p_from, const Vector2 &p_motion, bool p_infinite_inertia, real_t p_margin = 0.001, MotionResult *r_result = NULL, bool p_exclude_raycast_shapes = true) {
 
 		ERR_FAIL_COND_V(main_thread != Thread::get_caller_id(), false);
-		return physics_2d_server->body_test_motion(p_body, p_from, p_motion, p_margin, r_result);
+		return physics_2d_server->body_test_motion(p_body, p_from, p_motion, p_infinite_inertia, p_margin, r_result, p_exclude_raycast_shapes);
+	}
+
+	int body_test_ray_separation(RID p_body, const Transform2D &p_transform, bool p_infinite_inertia, Vector2 &r_recover_motion, SeparationResult *r_results, int p_result_max, float p_margin = 0.001) {
+
+		ERR_FAIL_COND_V(main_thread != Thread::get_caller_id(), false);
+		return physics_2d_server->body_test_ray_separation(p_body, p_transform, p_infinite_inertia, r_recover_motion, r_results, p_result_max, p_margin);
+	}
+
+	// this function only works on physics process, errors and returns null otherwise
+	Physics2DDirectBodyState *body_get_direct_state(RID p_body) {
+
+		ERR_FAIL_COND_V(main_thread != Thread::get_caller_id(), NULL);
+		return physics_2d_server->body_get_direct_state(p_body);
 	}
 
 	/* JOINT API */
@@ -258,9 +279,14 @@ public:
 	FUNC3(joint_set_param, RID, JointParam, real_t);
 	FUNC2RC(real_t, joint_get_param, RID, JointParam);
 
+	FUNC2(joint_disable_collisions_between_bodies, RID, const bool);
+	FUNC1RC(bool, joint_is_disabled_collisions_between_bodies, RID);
+
 	///FUNC3RID(pin_joint,const Vector2&,RID,RID);
 	///FUNC5RID(groove_joint,const Vector2&,const Vector2&,const Vector2&,RID,RID);
 	///FUNC4RID(damped_spring_joint,const Vector2&,const Vector2&,RID,RID);
+
+	//TODO need to convert this to FUNCRID, but it's a hassle..
 
 	FUNC3R(RID, pin_joint_create, const Vector2 &, RID, RID);
 	FUNC5R(RID, groove_joint_create, const Vector2 &, const Vector2 &, const Vector2 &, RID, RID);
@@ -285,6 +311,10 @@ public:
 	virtual void end_sync();
 	virtual void flush_queries();
 	virtual void finish();
+
+	virtual bool is_flushing_queries() const {
+		return physics_2d_server->is_flushing_queries();
+	}
 
 	int get_process_info(ProcessInfo p_info) {
 		return physics_2d_server->get_process_info(p_info);

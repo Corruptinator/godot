@@ -3,10 +3,10 @@
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,12 +27,13 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #ifndef MESSAGE_QUEUE_H
 #define MESSAGE_QUEUE_H
 
-#include "object.h"
-#include "os/mutex.h"
-#include "os/thread_safe.h"
+#include "core/object.h"
+#include "core/os/thread_safe.h"
+
 class MessageQueue {
 
 	_THREAD_SAFE_CLASS_
@@ -41,8 +42,6 @@ class MessageQueue {
 
 		DEFAULT_QUEUE_SIZE_KB = 1024
 	};
-
-	Mutex *mutex;
 
 	enum {
 		TYPE_CALL,
@@ -73,6 +72,8 @@ class MessageQueue {
 
 	static MessageQueue *singleton;
 
+	bool flushing;
+
 public:
 	static MessageQueue *get_singleton();
 
@@ -85,9 +86,10 @@ public:
 	Error push_notification(Object *p_object, int p_notification);
 	Error push_set(Object *p_object, const StringName &p_prop, const Variant &p_value);
 
-	bool print();
 	void statistics();
 	void flush();
+
+	bool is_flushing() const;
 
 	int get_max_buffer_usage() const;
 

@@ -1,12 +1,12 @@
 /*************************************************************************/
-/*  audio_driver_opensl.cpp                                             */
+/*  audio_driver_opensl.cpp                                              */
 /*************************************************************************/
 /*                       This file is part of:                           */
 /*                           GODOT ENGINE                                */
-/*                    http://www.godotengine.org                         */
+/*                      https://godotengine.org                          */
 /*************************************************************************/
-/* Copyright (c) 2007-2017 Juan Linietsky, Ariel Manzur.                 */
-/* Copyright (c) 2014-2017 Godot Engine contributors (cf. AUTHORS.md)    */
+/* Copyright (c) 2007-2019 Juan Linietsky, Ariel Manzur.                 */
+/* Copyright (c) 2014-2019 Godot Engine contributors (cf. AUTHORS.md)    */
 /*                                                                       */
 /* Permission is hereby granted, free of charge, to any person obtaining */
 /* a copy of this software and associated documentation files (the       */
@@ -27,6 +27,7 @@
 /* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
 /*************************************************************************/
+
 #include "audio_driver_opensl.h"
 
 #include <string.h>
@@ -37,11 +38,7 @@
 /* Structure for passing information to callback function */
 
 void AudioDriverOpenSL::_buffer_callback(
-		SLAndroidSimpleBufferQueueItf queueItf
-		/*   SLuint32 eventFlags,
-    const void * pBuffer,
-    SLuint32 bufferSize,
-    SLuint32 dataUsed*/) {
+		SLAndroidSimpleBufferQueueItf queueItf) {
 
 	bool mix = true;
 
@@ -56,7 +53,7 @@ void AudioDriverOpenSL::_buffer_callback(
 	} else {
 
 		int32_t *src_buff = mixdown_buffer;
-		for (int i = 0; i < buffer_size * 2; i++) {
+		for (unsigned int i = 0; i < buffer_size * 2; i++) {
 			src_buff[i] = 0;
 		}
 	}
@@ -69,40 +66,20 @@ void AudioDriverOpenSL::_buffer_callback(
 	int16_t *ptr = (int16_t *)buffers[last_free];
 	last_free = (last_free + 1) % BUFFER_COUNT;
 
-	for (int i = 0; i < buffer_size * 2; i++) {
+	for (unsigned int i = 0; i < buffer_size * 2; i++) {
 
 		ptr[i] = src_buff[i] >> 16;
 	}
 
 	(*queueItf)->Enqueue(queueItf, ptr, 4 * buffer_size);
-
-#if 0
-	SLresult res;
-	CallbackCntxt *pCntxt = (CallbackCntxt*)pContext;
-	if(pCntxt->pData < (pCntxt->pDataBase + pCntxt->size))
-	{
-	    res = (*queueItf)->Enqueue(queueItf, (void*) pCntxt->pData,
-				       2 * AUDIO_DATA_BUFFER_SIZE, SL_BOOLEAN_FALSE); /* Size given
-    in bytes. */
-	    CheckErr(res);
-	    /* Increase data pointer by buffer size */
-	    pCntxt->pData += AUDIO_DATA_BUFFER_SIZE;
-	}
-    }
-#endif
 }
 
 void AudioDriverOpenSL::_buffer_callbacks(
 		SLAndroidSimpleBufferQueueItf queueItf,
-		/*SLuint32 eventFlags,
-    const void * pBuffer,
-    SLuint32 bufferSize,
-    SLuint32 dataUsed,*/
 		void *pContext) {
 
 	AudioDriverOpenSL *ad = (AudioDriverOpenSL *)pContext;
 
-	//ad->_buffer_callback(queueItf,eventFlags,pBuffer,bufferSize,dataUsed);
 	ad->_buffer_callback(queueItf);
 }
 
@@ -113,73 +90,11 @@ const char *AudioDriverOpenSL::get_name() const {
 	return "Android";
 }
 
-#if 0
-int AudioDriverOpenSL::thread_func(SceSize args, void *argp) {
-
-	AudioDriverOpenSL* ad = s_ad;
-	sceAudioOutput2Reserve(AUDIO_OUTPUT_SAMPLE);
-
-	int half=0;
-	while(!ad->exit_thread) {
-
-		int16_t *ptr = &ad->outbuff[AUDIO_OUTPUT_SAMPLE*2*half];
-
-
-
-		if (!ad->active) {
-
-			for(int i=0;i<AUDIO_OUTPUT_SAMPLE*2;i++) {
-				ptr[i]=0;
-			}
-
-		} else {
-
-		//printf("samples: %i\n",AUDIO_OUTPUT_SAMPLE);
-			ad->lock();
-
-			ad->audio_server_process(AUDIO_OUTPUT_SAMPLE,ad->outbuff_32);
-
-			ad->unlock();
-
-			const int32_t* src_buff=ad->outbuff_32;
-
-			for(int i=0;i<AUDIO_OUTPUT_SAMPLE*2;i++) {
-
-				ptr[i]=src_buff[i]>>16;
-			}
-		}
-
-
-		/* Output 16-bit PCM STEREO data that is in pcmBuf without changing the volume */
-		sceAudioOutput2OutputBlocking(
-			   SCE_AUDIO_VOLUME_0dB*3, //0db at 0x8000, that's obvious
-			 ptr
-		);
-
-		if (half)
-			half=0;
-		else
-			half=1;
-
-	}
-
-	sceAudioOutput2Release();
-
-	sceKernelExitThread(SCE_KERNEL_EXIT_SUCCESS);
-	ad->thread_exited=true;
-	return SCE_KERNEL_EXIT_SUCCESS;
-
-}
-
-#endif
 Error AudioDriverOpenSL::init() {
 
-	SLresult
-			res;
+	SLresult res;
 	SLEngineOption EngineOption[] = {
-		(SLuint32)SL_ENGINEOPTION_THREADSAFE,
-		(SLuint32)SL_BOOLEAN_TRUE
-
+		{ (SLuint32)SL_ENGINEOPTION_THREADSAFE, (SLuint32)SL_BOOLEAN_TRUE }
 	};
 	res = slCreateEngine(&sl, 1, EngineOption, 0, NULL, NULL);
 	if (res != SL_RESULT_SUCCESS) {
@@ -194,8 +109,6 @@ Error AudioDriverOpenSL::init() {
 		ERR_FAIL_V(ERR_INVALID_PARAMETER);
 	}
 
-	print_line("OpenSL Init OK!");
-
 	return OK;
 }
 
@@ -204,8 +117,6 @@ void AudioDriverOpenSL::start() {
 	mutex = Mutex::create();
 	active = false;
 
-	SLint32 numOutputs = 0;
-	SLuint32 deviceID = 0;
 	SLresult res;
 
 	buffer_size = 1024;
@@ -224,25 +135,6 @@ void AudioDriverOpenSL::start() {
 	res = (*sl)->GetInterface(sl, SL_IID_ENGINE, (void *)&EngineItf);
 
 	ERR_FAIL_COND(res != SL_RESULT_SUCCESS);
-	/* Initialize arrays required[] and iidArray[] */
-	SLboolean required[MAX_NUMBER_INTERFACES];
-	SLInterfaceID iidArray[MAX_NUMBER_INTERFACES];
-
-#if 0
-
-	for (int i=0; i<MAX_NUMBER_INTERFACES; i++)
-	{
-	    required[i] = SL_BOOLEAN_FALSE;
-	    iidArray[i] = SL_IID_NULL;
-	}
-    // Set arrays required[] and iidArray[] for VOLUME interface
-	required[0] = SL_BOOLEAN_TRUE;
-	iidArray[0] = SL_IID_VOLUME;
-
-    // Create Output Mix object to be used by player
-	res = (*EngineItf)->CreateOutputMix(EngineItf, &OutputMix, 1,
-					    iidArray, required);
-#else
 
 	{
 		const SLInterfaceID ids[1] = { SL_IID_ENVIRONMENTALREVERB };
@@ -250,7 +142,6 @@ void AudioDriverOpenSL::start() {
 		res = (*EngineItf)->CreateOutputMix(EngineItf, &OutputMix, 0, ids, req);
 	}
 
-#endif
 	ERR_FAIL_COND(res != SL_RESULT_SUCCESS);
 	// Realizing the Output Mix object in synchronous mode.
 	res = (*OutputMix)->Realize(OutputMix, SL_BOOLEAN_FALSE);
@@ -283,10 +174,7 @@ void AudioDriverOpenSL::start() {
 	//cntxt.pDataBase = (void*)&pcmData;
 	//cntxt.pData = cntxt.pDataBase;
 	//cntxt.size = sizeof(pcmData);
-	/* Set arrays required[] and iidArray[] for SEEK interface
-	(PlayItf is implicit) */
-	required[0] = SL_BOOLEAN_TRUE;
-	iidArray[0] = SL_IID_BUFFERQUEUE;
+
 	/* Create the music player */
 
 	{
@@ -308,50 +196,137 @@ void AudioDriverOpenSL::start() {
 	/* Setup to receive buffer queue event callbacks */
 	res = (*bufferQueueItf)->RegisterCallback(bufferQueueItf, _buffer_callbacks, this);
 	ERR_FAIL_COND(res != SL_RESULT_SUCCESS);
-/* Before we start set volume to -3dB (-300mB) */
-#if 0
-	res = (*OutputMix)->GetInterface(OutputMix, SL_IID_VOLUME,
-					 (void*)&volumeItf);
-	ERR_FAIL_COND( res !=SL_RESULT_SUCCESS );
-	/* Setup the data source structure for the buffer queue */
 
-	res = (*volumeItf)->SetVolumeLevel(volumeItf, -300);
-	ERR_FAIL_COND( res !=SL_RESULT_SUCCESS );
-#endif
 	last_free = 0;
-#if 1
+
 	//fill up buffers
 	for (int i = 0; i < BUFFER_COUNT; i++) {
 		/* Enqueue a few buffers to get the ball rolling */
 		res = (*bufferQueueItf)->Enqueue(bufferQueueItf, buffers[i], 4 * buffer_size); /* Size given in */
 	}
-#endif
 
 	res = (*playItf)->SetPlayState(playItf, SL_PLAYSTATE_PLAYING);
 	ERR_FAIL_COND(res != SL_RESULT_SUCCESS);
 
-#if 0
-	res = (*bufferQueueItf)->GetState(bufferQueueItf, &state);
-	ERR_FAIL_COND( res !=SL_RESULT_SUCCESS );
-	while(state.count)
-	{
-	    (*bufferQueueItf)->GetState(bufferQueueItf, &state);
-	}
-	/* Make sure player is stopped */
-	res = (*playItf)->SetPlayState(playItf, SL_PLAYSTATE_STOPPED);
-	CheckErr(res);
-	/* Destroy the player */
-	(*player)->Destroy(player);
-	/* Destroy Output Mix object */
-	(*OutputMix)->Destroy(OutputMix);
-#endif
-
 	active = true;
+}
+
+void AudioDriverOpenSL::_record_buffer_callback(SLAndroidSimpleBufferQueueItf queueItf) {
+
+	for (int i = 0; i < rec_buffer.size(); i++) {
+		int32_t sample = rec_buffer[i] << 16;
+		input_buffer_write(sample);
+		input_buffer_write(sample); // call twice to convert to Stereo
+	}
+
+	SLresult res = (*recordBufferQueueItf)->Enqueue(recordBufferQueueItf, rec_buffer.ptrw(), rec_buffer.size() * sizeof(int16_t));
+	ERR_FAIL_COND(res != SL_RESULT_SUCCESS);
+}
+
+void AudioDriverOpenSL::_record_buffer_callbacks(SLAndroidSimpleBufferQueueItf queueItf, void *pContext) {
+
+	AudioDriverOpenSL *ad = (AudioDriverOpenSL *)pContext;
+
+	ad->_record_buffer_callback(queueItf);
+}
+
+Error AudioDriverOpenSL::capture_init_device() {
+
+	SLDataLocator_IODevice loc_dev = {
+		SL_DATALOCATOR_IODEVICE,
+		SL_IODEVICE_AUDIOINPUT,
+		SL_DEFAULTDEVICEID_AUDIOINPUT,
+		NULL
+	};
+	SLDataSource recSource = { &loc_dev, NULL };
+
+	SLDataLocator_AndroidSimpleBufferQueue loc_bq = {
+		SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE,
+		2
+	};
+	SLDataFormat_PCM format_pcm = {
+		SL_DATAFORMAT_PCM,
+		1,
+		SL_SAMPLINGRATE_44_1,
+		SL_PCMSAMPLEFORMAT_FIXED_16,
+		SL_PCMSAMPLEFORMAT_FIXED_16,
+		SL_SPEAKER_FRONT_CENTER,
+		SL_BYTEORDER_LITTLEENDIAN
+	};
+	SLDataSink recSnk = { &loc_bq, &format_pcm };
+
+	const SLInterfaceID ids[2] = { SL_IID_ANDROIDSIMPLEBUFFERQUEUE, SL_IID_ANDROIDCONFIGURATION };
+	const SLboolean req[2] = { SL_BOOLEAN_TRUE, SL_BOOLEAN_TRUE };
+
+	SLresult res = (*EngineItf)->CreateAudioRecorder(EngineItf, &recorder, &recSource, &recSnk, 2, ids, req);
+	ERR_FAIL_COND_V(res != SL_RESULT_SUCCESS, ERR_CANT_OPEN);
+
+	res = (*recorder)->Realize(recorder, SL_BOOLEAN_FALSE);
+	ERR_FAIL_COND_V(res != SL_RESULT_SUCCESS, ERR_CANT_OPEN);
+
+	res = (*recorder)->GetInterface(recorder, SL_IID_RECORD, (void *)&recordItf);
+	ERR_FAIL_COND_V(res != SL_RESULT_SUCCESS, ERR_CANT_OPEN);
+
+	res = (*recorder)->GetInterface(recorder, SL_IID_ANDROIDSIMPLEBUFFERQUEUE, (void *)&recordBufferQueueItf);
+	ERR_FAIL_COND_V(res != SL_RESULT_SUCCESS, ERR_CANT_OPEN);
+
+	res = (*recordBufferQueueItf)->RegisterCallback(recordBufferQueueItf, _record_buffer_callbacks, this);
+	ERR_FAIL_COND_V(res != SL_RESULT_SUCCESS, ERR_CANT_OPEN);
+
+	SLuint32 state;
+	res = (*recordItf)->GetRecordState(recordItf, &state);
+	ERR_FAIL_COND_V(res != SL_RESULT_SUCCESS, ERR_CANT_OPEN);
+
+	if (state != SL_RECORDSTATE_STOPPED) {
+		res = (*recordItf)->SetRecordState(recordItf, SL_RECORDSTATE_STOPPED);
+		ERR_FAIL_COND_V(res != SL_RESULT_SUCCESS, ERR_CANT_OPEN);
+
+		res = (*recordBufferQueueItf)->Clear(recordBufferQueueItf);
+		ERR_FAIL_COND_V(res != SL_RESULT_SUCCESS, ERR_CANT_OPEN);
+	}
+
+	const int rec_buffer_frames = 2048;
+	rec_buffer.resize(rec_buffer_frames);
+	input_buffer_init(rec_buffer_frames);
+
+	res = (*recordBufferQueueItf)->Enqueue(recordBufferQueueItf, rec_buffer.ptrw(), rec_buffer.size() * sizeof(int16_t));
+	ERR_FAIL_COND_V(res != SL_RESULT_SUCCESS, ERR_CANT_OPEN);
+
+	res = (*recordItf)->SetRecordState(recordItf, SL_RECORDSTATE_RECORDING);
+	ERR_FAIL_COND_V(res != SL_RESULT_SUCCESS, ERR_CANT_OPEN);
+
+	return OK;
+}
+
+Error AudioDriverOpenSL::capture_start() {
+
+	if (OS::get_singleton()->request_permission("RECORD_AUDIO")) {
+		return capture_init_device();
+	}
+
+	return OK;
+}
+
+Error AudioDriverOpenSL::capture_stop() {
+
+	SLuint32 state;
+	SLresult res = (*recordItf)->GetRecordState(recordItf, &state);
+	ERR_FAIL_COND_V(res != SL_RESULT_SUCCESS, ERR_CANT_OPEN);
+
+	if (state != SL_RECORDSTATE_STOPPED) {
+		res = (*recordItf)->SetRecordState(recordItf, SL_RECORDSTATE_STOPPED);
+		ERR_FAIL_COND_V(res != SL_RESULT_SUCCESS, ERR_CANT_OPEN);
+
+		res = (*recordBufferQueueItf)->Clear(recordBufferQueueItf);
+		ERR_FAIL_COND_V(res != SL_RESULT_SUCCESS, ERR_CANT_OPEN);
+	}
+
+	return OK;
 }
 
 int AudioDriverOpenSL::get_mix_rate() const {
 
-	return 44100;
+	return 44100; // hardcoded for Android, as selected by SL_SAMPLINGRATE_44_1
 }
 
 AudioDriver::SpeakerMode AudioDriverOpenSL::get_speaker_mode() const {
@@ -393,4 +368,5 @@ AudioDriverOpenSL::AudioDriverOpenSL() {
 	s_ad = this;
 	mutex = Mutex::create(); //NULL;
 	pause = false;
+	active = false;
 }
